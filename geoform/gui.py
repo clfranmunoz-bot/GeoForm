@@ -89,7 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, project=None):
         super().__init__()
         self.resize(1680, 1000)
-        self.setWindowIcon(theme.icon("logo", theme.ACCENT, 32))
+        self.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(theme.CHECK), "geoform.ico")))
         self.project = project
         self.layer_defs, self.base_kw, self.actors = {}, {}, {}
         self.visible = set()
