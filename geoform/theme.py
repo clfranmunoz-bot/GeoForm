@@ -23,11 +23,11 @@ MONO = '"JetBrains Mono", "Cascadia Mono", "SF Mono", "Consolas", monospace'
 SANS_LIST = ["Inter", "Segoe UI Variable Text", "SF Pro Text", "Helvetica Neue", "Segoe UI", "DejaVu Sans"]
 
 # 3D (VTK solo trae arial/courier/times)
-SCENE_BG = ("#0d1117", "#243142")  # abajo, arriba
+SCENE_BG = ("#0e1621", "#2c3d55")  # abajo, arriba: azul noche (por defecto)
 SCENE_TEXT = "#c9d4e0"
 SCENE_GRID = "#7d8da1"
 # escena clara estilo Leapfrog (por defecto); la oscura queda como alternativa
-SCENE_LIGHT = {"bg": ("#d9dee5", "#ffffff"), "text": "#1f2937", "grid": "#4b5563"}
+SCENE_LIGHT = {"bg": ("#2f3a48", "#6e7c8f"), "text": "#e8edf3", "grid": "#b8c2cf"}  # gris azulado medio: sin deslumbrar
 SCENE_DARK = {"bg": SCENE_BG, "text": SCENE_TEXT, "grid": SCENE_GRID}
 
 CHECK = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "assets", "check.svg").replace("\\", "/")
@@ -65,7 +65,8 @@ GROUP_ICON = {"Sondajes": "drill", "Topografía": "topo", "Modelos geológicos":
               "Estructural": "fault", "Compósitos": "target", "Modelos de bloques": "blocks",
               "Estimación": "vario", "Reportes": "report",
               "Cronología de superficies": "section", "Volúmenes de salida": "layers",
-              "Sistema de fallas": "fault", "Modelos numéricos": "target"}
+              "Sistema de fallas": "fault", "Modelos numéricos": "target",
+              "Planificación minera": "plan"}
 
 
 def icon(name, color=TEXT2, size=20):

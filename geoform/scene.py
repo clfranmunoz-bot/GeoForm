@@ -13,7 +13,7 @@ GRADE_CMAP = "turbo"
 DEFAULT_ON = ("solid:", "fault:", "holes:grade")  # capas visibles al abrir / render por defecto
 SOLID = dict(smooth_shading=True, split_sharp_edges=True, feature_angle=35, ambient=0.16, diffuse=0.88, specular=0.35, specular_power=28)
 _ZFLIP = np.diag([1.0, 1.0, -1.0, 1.0])
-LIGHT = True  # fondo claro (Leapfrog); la GUI lo alterna
+LIGHT = False  # por defecto azul noche; "Fondo" alterna al gris azulado
 
 
 def colors():
@@ -174,6 +174,11 @@ def layers(project):
             out.append((f"shell:{c}", "Modelos numéricos", f"Envolvente {project.cfg['element']} ≥ {c:g}",
                         lambda c=c, i=i: dict(mesh=flip(grade_shell(m, *project.all_comp, c)),
                                               color=shell_cols[i % 4], opacity=0.45 + 0.15 * i, **SOLID)))
+    if getattr(project, "pit", None) is not None:
+        from .pit import pit_shell
+        out.append(("pit", "Planificación minera", "Pit óptimo", lambda: dict(
+            mesh=flip(pit_shell(project.pit[0])), color="#cbd5e1", opacity=0.55, show_edges=True,
+            edge_color="#475569", line_width=0.3, **SOLID)))
     if project.blocks is not None:
         def blocks():
             b = project.blocks.threshold(0.5, scalars="domain")

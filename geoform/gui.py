@@ -653,6 +653,10 @@ class MainWindow(QtWidgets.QMainWindow):
             kpis.addWidget(card(f"Recurso > {row[0]:g}{un} {el}", f"{row[1] / 1e6:,.1f} Mt", f"dominio {p.cfg['domain']}", theme.ACCENT))
             kpis.addWidget(card("Ley media", f"{row[2]:.2f} {un}", f"{el} sobre la ley de corte", theme.AMBER))
             kpis.addWidget(card(f"{el} contenido", f"{row[3] / 1e3:,.0f} kt", "metal fino estimado"))
+        if p.pit is not None:
+            s = p.pit[1]
+            kpis.addWidget(card("Pit óptimo", f"{s['t_mineral'] / 1e6:,.1f} Mt",
+                                f"razón E/M {s['razon']:.1f} · US$ {s['valor'] / 1e6:,.0f} M", theme.SERIES[1]))
         lay.addLayout(kpis)
 
         fig, canvas = self._figure(11, 4.6)

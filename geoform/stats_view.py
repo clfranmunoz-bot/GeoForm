@@ -7,6 +7,31 @@ from . import theme
 from .estimation import stats, swath
 
 
+def stereonet(ax, faults):
+    """Red de Schmidt (igual área, hemisferio inferior): círculo mayor y polo de cada falla."""
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_rlim(0, 1)
+    ax.set_yticklabels([])
+    ax.set_xticks(np.radians(np.arange(0, 360, 30)))
+    ax.grid(alpha=0.25)
+    for i, f in enumerate(faults):
+        dd, dip = np.radians(f["dip_direction"]), np.radians(f["dip"])
+        # círculo mayor: direcciones dentro del plano, de rumbo a rumbo pasando por el manteo
+        t = np.linspace(0, np.pi, 90)  # rumbo -> manteo -> rumbo opuesto: siempre hemisferio inferior
+        v = np.stack([np.cos(t) * np.sin(dd + np.pi / 2) + np.sin(t) * np.cos(dip) * np.sin(dd),
+                      np.cos(t) * np.cos(dd + np.pi / 2) + np.sin(t) * np.cos(dip) * np.cos(dd),
+                      np.sin(t) * np.sin(dip)], axis=1)
+        plunge = np.arcsin(np.clip(v[:, 2], -1, 1))
+        az = np.arctan2(v[:, 0], v[:, 1])
+        c = theme.SERIES[(i + 3) % len(theme.SERIES)]
+        ax.plot(az, np.sqrt(2) * np.sin((np.pi / 2 - plunge) / 2), color=c, lw=1.6, label=f["name"])
+        ax.plot([dd + np.pi], [np.sqrt(2) * np.sin(dip / 2)], "o", color=c, ms=6)  # polo: trend dd+180, plunge 90-dip
+    ax.set_title("Estereograma de fallas", loc="left", pad=14)
+    if faults:
+        ax.legend(loc="lower left", bbox_to_anchor=(-0.25, -0.15), fontsize=7)
+
+
 class StatsView(QtWidgets.QWidget):
     def __init__(self, window):
         super().__init__()
@@ -40,7 +65,17 @@ class StatsView(QtWidgets.QWidget):
         self.topcut.setValue(p.cfg["topcut"] or 0)
         self.info.setText("   ·   ".join(f"{k} {v:,.3f}" if isinstance(v, float) else f"{k} {v}" for k, v in s.items()))
         gs = self.fig.add_gridspec(2, 3, height_ratios=[1.1, 1])
-        ax = self.fig.add_subplot(gs[0, :])
+        ax = self.fig.add_subplot(gs[0, 0])
+        if p.xval is not None:
+            real, est, m = p.xval
+            a = self.fig.add_subplot(gs[0, 1])
+            a.scatter(real, est, s=8, color=theme.SERIES[1], alpha=0.6)
+            lim = [0, max(real.max(), est.max())]
+            a.plot(lim, lim, color=theme.TEXT2, lw=1, ls="--")
+            a.set_title(f"Validación cruzada · R {m['R']:.2f} · sesgo {m['sesgo']:+.3f}", loc="left")
+            a.set_xlabel(f"Real {el}")
+            a.set_ylabel("Estimado (kriging)")
+        stereonet(self.fig.add_subplot(gs[0, 2], projection="polar"), p.cfg["faults"])
         ax.hist(raw, bins=50, color=theme.SERIES[0], alpha=0.8)
         for k, c in (("P95", theme.SERIES[2]), ("P99", theme.SERIES[3])):
             ax.axvline(s[k], color=c, ls="--", lw=1.2, label=f"{k} = {s[k]:.3f}")

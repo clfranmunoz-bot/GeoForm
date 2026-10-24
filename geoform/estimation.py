@@ -190,6 +190,22 @@ def swath(xyz, vals, blocks, axis, width):
     return tuple(np.array(r) for r in zip(*rows))
 
 
+def cross_validate(xyz, vals, vario=None, n=300, seed=0):
+    """Validación cruzada (dejar uno fuera) del kriging en `n` compósitos al azar.
+    -> (real, estimado, {sesgo, R, RMSE})."""
+    idx = np.random.default_rng(seed).choice(len(vals), size=min(n, len(vals)), replace=False)
+    kw = vario.kriging_kwargs() if vario is not None else {}
+    est = np.empty(len(idx))
+    keep = np.ones(len(vals), bool)
+    for j, i in enumerate(idx):
+        keep[i] = False
+        est[j] = ordinary_kriging_3d(xyz[keep], vals[keep], xyz[i:i + 1], n_neighbors=24, **kw)[0]
+        keep[i] = True
+    real = vals[idx]
+    return real, est, {"sesgo": float((est - real).mean()), "R": float(np.corrcoef(real, est)[0, 1]),
+                       "RMSE": float(np.sqrt(((est - real) ** 2).mean()))}
+
+
 def grade_tonnage(grades, block_volume, density, cutoffs):
     """Tabla [(ley de corte, toneladas, ley media, metal t)] sobre bloques estimados."""
     g = np.asarray(grades, float)

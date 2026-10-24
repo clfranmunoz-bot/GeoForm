@@ -124,51 +124,56 @@ class SectionView(QtWidgets.QWidget):
         return ax, pos
 
     def draw(self):
-        from matplotlib.colors import ListedColormap
+        from matplotlib.patches import Patch
 
         p = self.win.project
         if p is None or p.model is None:
             return
         m, (ax_i, pos) = p.model, self._plane()
         self.pos_label.setText(f"{'Y' if ax_i == 0 else 'X'} = {pos:,.0f}")
-        H, E, P = section_grid(m, ax_i, pos)
-        stack = np.stack([m.field_at(m.solids[u], P) for u in p.units])
-        lab = np.argmax(stack, axis=0).reshape(H.shape).astype(float)
-        lab[m.field_at(m.surfaces["Topografía"], P).reshape(H.shape) < 0] = np.nan
+        H, E, P = section_grid(m, ax_i, pos, n=420)
         self.fig.clear()
         ax = self.fig.add_subplot()
-        cols = [scene.unit_color(p, u) for u in p.units]
-        ax.pcolormesh(H, E, lab, cmap=ListedColormap(cols), vmin=-0.5, vmax=len(cols) - 0.5, shading="auto", alpha=0.55)
-        for name, field in m.surfaces.items():
-            f = m.field_at(field, P).reshape(H.shape)
-            c = "#e6edf3" if name == "Topografía" else scene.unit_color(p, name.split(" ", 1)[1])
-            ax.contour(H, E, f, levels=[0.0], colors=[c], linewidths=1.6 if name == "Topografía" else 1.2)
+        ax.set_facecolor("#1a2230")
+        # cada unidad como polígono vectorial (contorno 0 de su campo): bordes suaves, sin píxeles
+        for u in p.units:
+            f = m.field_at(m.solids[u], P).reshape(H.shape)
+            if f.max() > 0:
+                ax.contourf(H, E, f, levels=[0.0, f.max() + 1], colors=[scene.unit_color(p, u)], alpha=0.92, antialiased=True)
+                ax.contour(H, E, f, levels=[0.0], colors=["#0f1620"], linewidths=0.7)
+        topo = m.field_at(m.surfaces["Topografía"], P).reshape(H.shape)
+        ax.contour(H, E, topo, levels=[0.0], colors=["#f1f5f9"], linewidths=1.4)
+        for fv in m.fault_values:
+            ax.contour(H, E, m.field_at(fv, P).reshape(H.shape), levels=[0.0], colors=["#f43f5e"],
+                       linewidths=1.5, linestyles="dashed")
         for name, field in m.custom.items():
             ax.contour(H, E, m.field_at(field, P).reshape(H.shape), levels=[0.0], colors=["#fbbf24"],
-                       linewidths=2.0, linestyles="--")
+                       linewidths=1.8, linestyles="dotted")
         for h, e, lith in hole_traces(p, ax_i, pos, self.tol.value()):
             c = scene.unit_color(p, lith) if lith in p.units else "#8b98a8"
-            ax.plot(h, e, color="#0d1117", lw=5.5, solid_capstyle="butt")
-            ax.plot(h, e, color=c, lw=3.5, solid_capstyle="butt")
+            ax.plot(h, e, color="#e2e8f0", lw=3.4, solid_capstyle="butt", zorder=3)  # borde claro: el sondaje se lee sobre su unidad
+            ax.plot(h, e, color=c, lw=2.0, solid_capstyle="butt", zorder=4)
         for unit, pts in p.cfg["picks"].items():
             q = np.asarray(pts, float).reshape(-1, 3)
             q = q[np.abs(q[:, 1 - ax_i] - pos) < self.tol.value()]
             if len(q) and unit in p.units:
-                ax.scatter(q[:, ax_i], q[:, 2], s=46, color=scene.unit_color(p, unit), edgecolor="white",
-                           linewidth=1.2, zorder=5, label=f"Trazo techo {unit}")
-        for fv in m.fault_values:  # traza del plano de falla en el perfil
-            g = m.field_at(fv, P).reshape(H.shape)
-            ax.contour(H, E, g, levels=[0.0], colors=["#f43f5e"], linewidths=1.6, linestyles="-.")
+                ax.scatter(q[:, ax_i], q[:, 2], s=34, marker="D", color=scene.unit_color(p, unit), edgecolor="white",
+                           linewidth=1.0, zorder=6)
         ax.set_xlabel("Este X (m)" if ax_i == 0 else "Norte Y (m)")
         ax.set_ylabel("Elevación (m)")
         ax.set_aspect("equal")
-        ax.set_title(f"{self.axis.currentText().split(' (')[0]} — {self.pos_label.text()}", loc="left")
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend(loc="lower right", fontsize=8)
+        ax.set_xlim(H.min(), H.max())
+        ax.set_ylim(E.min(), E[topo > 0].max() + 15)  # recorta el aire sobre el terreno
+        ax.grid(True, color="#ffffff", alpha=0.08, lw=0.6)
+        ax.minorticks_on()
+        ax.set_title(f"{self.axis.currentText().split(' (')[0]} · {self.pos_label.text()}", loc="left", fontsize=11)
+        handles = [Patch(color=scene.unit_color(p, u), label=u) for u in p.units]
+        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False, fontsize=8,
+                  title="Unidades", title_fontsize=8)
         self.canvas.draw_idle()
         n = sum(len(v) for v in p.cfg["picks"].values())
-        self.hint.setText(f"Líneas = superficies de contacto · discontinua roja = falla · amarilla = volúmenes del "
-                          f"usuario · {n} puntos trazados. Activa «Trazar contacto» y haz clic; F5 recalcula las mallas.")
+        self.hint.setText(f"Línea blanca = topografía · roja discontinua = falla · ámbar = volúmenes del usuario · "
+                          f"{n} puntos trazados. Activa «Trazar contacto» y haz clic; F5 recalcula las mallas.")
 
     # -- edición --------------------------------------------------------------------
     def _click(self, ev):

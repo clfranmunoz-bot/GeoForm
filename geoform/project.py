@@ -29,6 +29,7 @@ DEFAULTS = {
     "volumes": [],                 # [{name, top, bottom}] volúmenes entre superficies
     "topcut": None,                # ley máxima de compósitos (capping); None = sin recorte
     "shells": [0.5, 1.0],          # leyes de corte de las envolventes de ley (modelo numérico)
+    "pit": {},                     # parámetros económicos del pit (ver pit.DEFAULTS)
 }
 FILE_KEYS = ("collars", "surveys", "intervals", "assays", "topography", "satellite")
 
@@ -38,6 +39,7 @@ class Project:
         self.path = path
         self.cfg = {**DEFAULTS, **cfg}
         self.model = self.blocks = self.vario = None
+        self.pit = self.xval = None
         self.comp = self.all_comp = None
         self.log = print
 
@@ -85,7 +87,7 @@ class Project:
         self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
                               self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"],
                               self.cfg["picks"], self.cfg["volumes"]).build()
-        self.blocks = self.vario = self.comp = self.all_comp = None
+        self.blocks = self.vario = self.comp = self.all_comp = self.pit = self.xval = None
         if estimate and self.assays:
             self.estimate()
         return self
@@ -110,7 +112,15 @@ class Project:
         self.vario = Variogram(xyz, vals)
         self.log(f"Variograma ({len(vals)} compósitos en {dom or 'todo'}): {self.vario}")
         if dom:
+            from .estimation import cross_validate
+            from .pit import optimize
+
             self.blocks = domain_block_model(self.model, dom, xyz, vals, tuple(self.cfg["block"]), self.vario, method)
+            self.xval = cross_validate(xyz, vals, self.vario)
+            self.log("Validación cruzada: " + ", ".join(f"{k} {v:.3f}" for k, v in self.xval[2].items()))
+            self.pit = optimize(self, self.cfg["pit"])
+            s = self.pit[1]
+            self.log(f"Pit óptimo: {s['t_mineral'] / 1e6:.1f} Mt mineral a {s['ley']:.2f}, razón E/M {s['razon']:.2f}")
         return self.blocks
 
     # -- reportes -------------------------------------------------------------------
@@ -174,6 +184,11 @@ class Project:
             lines += [f"{c:>12.2f}{t:>16,.0f}{g:>12.3f}{m:>14,.0f}" for c, t, g, m in gt]
             lines += ["", "CLASIFICACIÓN (corte 0)", f"{'Categoría':<12}{'Toneladas':>16}{'Ley media':>12}{'Metal (t)':>14}"]
             lines += [f"{n:<12}{t:>16,.0f}{g:>12.3f}{m:>14,.0f}" for n, t, g, m in self.classification()]
+        if self.pit is not None:
+            s = self.pit[1]
+            lines += ["", "PIT ÓPTIMO (clausura máxima / Lerchs-Grossmann)",
+                      f"  Mineral {s['t_mineral']:,.0f} t a {s['ley']:.3f}  ·  estéril {s['t_esteril']:,.0f} t  ·  "
+                      f"razón E/M {s['razon']:.2f}  ·  valor US$ {s['valor']:,.0f}"]
         tot, per = self.validation()
         lines += ["", f"VALIDACIÓN EN SONDAJES: {tot:.1%} de los metros coinciden con el modelo"]
         lines += [f"  {u:<14}{v:>8.1%}" for u, v in per.items()]
