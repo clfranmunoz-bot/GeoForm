@@ -150,21 +150,24 @@ class GeoModel:
         sides = [side(P) for _s, side in blocks]
         tops = [None] + [[f(P) for f in self._contact_field(k, blocks, T)] for k in range(1, len(self.strat))]
 
-        solids = {}
+        solids, raw = {}, {}  # raw: campo por bloque sin la falla (la malla se corta exacto en el plano)
         for k, u in enumerate(self.strat):
             per_block = []
             for b, side in enumerate(sides):
-                s = np.minimum(t, side)
+                s = t
                 if tops[k] is not None:
                     s = np.minimum(s, tops[k][b])
                 if k + 1 < len(self.strat):
                     s = np.minimum(s, -tops[k + 1][b])
                 per_block.append(s)
-            solids[u] = np.max(per_block, axis=0)
+            raw[u] = per_block
+            solids[u] = np.max([np.minimum(s, side) for s, side in zip(per_block, sides)], axis=0)
         for j, u in enumerate(self.intrusions):
             body = self._body_field(u, P)
             for v in self.strat + self.intrusions[:j]:
                 solids[v] = np.minimum(solids[v], -body)
+                if v in raw:
+                    raw[v] = [np.minimum(s, -body) for s in raw[v]]
             solids[u] = np.minimum(body, t)
 
         # superficies de contacto (una por techo, combinando bloques de falla) y volúmenes del usuario
@@ -177,7 +180,8 @@ class GeoModel:
             top, bot = self.surfaces[v["top"]], self.surfaces[v["bottom"]]
             self.custom[v["name"]] = np.minimum(np.minimum(t, top), -bot)
 
-        self.grid, self.topo, self.solids = grid, T, solids
+        self.grid, self.topo, self.solids, self.raw = grid, T, solids, raw
+        self.block_signs = [s for s, _ in blocks]
         self.fault_values = [plane_field(f)(P) for f in self.faults]
         stack = np.stack([solids[u] for u in self.units])
         self.labels = np.where(t > 0, np.argmax(stack, axis=0), -1)  # -1 = aire
@@ -204,9 +208,31 @@ class GeoModel:
         return m.smooth_taubin(n_iter=20) if m.n_points else m
 
     def solid_mesh(self, unit):
-        """Sólido cerrado de una unidad o de un volumen del usuario (isosuperficie 0, bordes tapados)."""
+        """Sólido cerrado. Con fallas, cada bloque se mallea por separado y se corta exacto en el
+        plano de falla (escalón nítido, como Leapfrog) en vez de depender de la grilla."""
+        if not self.faults or unit not in self.raw:
+            return self._iso_mesh(self.solids[unit] if unit in self.solids else self.custom[unit])
+        import pyvista as pv
+
+        parts = []
+        for signs, field in zip(self.block_signs, self.raw[unit]):
+            m = self._iso_mesh(field)
+            for s, f in zip(signs, self.faults):
+                if not m.n_points:
+                    break
+                dd, dip = np.radians(f["dip_direction"]), np.radians(f["dip"])
+                n = s * np.array([np.sin(dd) * np.sin(dip), np.cos(dd) * np.sin(dip), -np.cos(dip)])
+                try:  # conserva el lado del bloque y tapa la cara sobre el plano
+                    m = m.clip_closed_surface(normal=n, origin=(f["point"][0], f["point"][1], -f["point"][2]))
+                except (RuntimeError, ValueError):  # malla no cerrada: corte abierto
+                    m = m.clip(normal=-n, origin=(f["point"][0], f["point"][1], -f["point"][2]))
+            if m.n_points:
+                parts.append(m.extract_surface(algorithm="dataset_surface"))
+        return pv.merge(parts) if parts else pv.PolyData()
+
+    def _iso_mesh(self, field):
         g = self.grid.copy()
-        s = (self.solids[unit] if unit in self.solids else self.custom[unit]).reshape(g.dimensions, order="F").copy()
+        s = np.asarray(field).reshape(g.dimensions, order="F").copy()
         s[[0, -1], :, :] = s[:, [0, -1], :] = -1e-3  # tapa casi en el borde: caras laterales planas, sin huecos
         s[:, :, [0, -1]] = -1e-3
         g.point_data["s"] = s.ravel(order="F")

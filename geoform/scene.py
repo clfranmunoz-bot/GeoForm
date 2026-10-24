@@ -177,7 +177,7 @@ def layers(project):
 
 
 def section(kw, normal, origin):
-    """Aplica un corte (slicer) a los kwargs de una capa (malla abierta en el plano)."""
+    """Aplica un corte (slicer) a los kwargs de una capa (malla abierta; la cara la pinta section_faces)."""
     mesh = kw["mesh"]
     return {**kw, "mesh": mesh.clip(normal=normal, origin=origin)} if mesh.n_points else kw
 
