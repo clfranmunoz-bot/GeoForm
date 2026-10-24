@@ -14,6 +14,9 @@ from .project import Project
 from .scene import DEFAULT_ON
 
 
+STYLES = ["Sólido", "Sólido + aristas", "Malla (alambre)", "Translúcido", "Puntos"]
+
+
 class Overlay(QtWidgets.QWidget):
     """Velo con progreso sobre el área central mientras corre el cálculo."""
 
@@ -92,6 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(theme.CHECK), "geoform.ico")))
         self.project = project
         self.layer_defs, self.base_kw, self.actors = {}, {}, {}
+        self.styles = {}  # key -> (estilo, sombreado) elegido en la barra de capas; sobrevive a render_all
         self.visible = set()
         self.clip = None
         self._thread = None
@@ -371,6 +375,8 @@ class MainWindow(QtWidgets.QMainWindow):
         mesh = kw.pop("mesh")
         if mesh.n_points:
             self.actors[key] = self.plotter.add_mesh(mesh, name=key, **kw)
+            if key in self.styles:
+                self._apply_style(key, *self.styles[key])
 
     def _tree_toggled(self, item, _col):
         key = item.data(0, QtCore.Qt.UserRole)
@@ -411,6 +417,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 btn.setStyleSheet(f"background: rgb({int(c[0] * 255)},{int(c[1] * 255)},{int(c[2] * 255)});")
                 btn.clicked.connect(lambda _=False, k=key, b=btn: self._pick_color(k, b))
             h.addWidget(btn)
+            if actor.GetMapper().GetInput().GetNumberOfPolys():  # mallas (no puntos/líneas)
+                st, sh = self.styles.get(key, ("Sólido", "Suave"))
+                style = QtWidgets.QComboBox()
+                style.addItems(STYLES)
+                style.setCurrentText(st)
+                shade = QtWidgets.QComboBox()
+                shade.addItems(["Suave", "Plano"])
+                shade.setCurrentText(sh)
+                for w in (style, shade):
+                    w.setFixedWidth(150 if w is style else 80)
+                    w.currentTextChanged.connect(lambda _=None, k=key, a=style, b=shade: self._apply_style(k, a.currentText(), b.currentText()))
+                    h.addWidget(w)
             s = QtWidgets.QSlider(QtCore.Qt.Horizontal, minimum=0, maximum=100)
             s.setFixedWidth(160)
             s.setValue(int(actor.GetProperty().GetOpacity() * 100))
@@ -421,6 +439,22 @@ class MainWindow(QtWidgets.QMainWindow):
             it.setSizeHint(row.sizeHint())
             self.shape_list.addItem(it)
             self.shape_list.setItemWidget(it, row)
+
+    def _apply_style(self, key, style, shade):
+        """Renderizado por capa (como Leapfrog): sólido, malla de alambre, sólido con aristas,
+        puntos o transparente; sombreado suave o plano."""
+        self.styles[key] = (style, shade)
+        prop = self.actors[key].GetProperty()
+        {"Malla (alambre)": prop.SetRepresentationToWireframe,
+         "Puntos": prop.SetRepresentationToPoints}.get(style, prop.SetRepresentationToSurface)()
+        prop.SetEdgeVisibility(style == "Sólido + aristas")
+        prop.SetEdgeColor(0.05, 0.07, 0.09)
+        prop.SetLineWidth(1.0)
+        prop.SetPointSize(3.0)
+        if style == "Translúcido":
+            prop.SetOpacity(0.35)
+        prop.SetInterpolationToFlat() if shade == "Plano" else prop.SetInterpolationToPhong()
+        self.plotter.render()
 
     def _pick_color(self, key, btn):
         actor = self.actors[key]
