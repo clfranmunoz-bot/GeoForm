@@ -113,8 +113,16 @@ class GeoModel:
             sel = m if m.sum() >= 6 else np.ones(len(pts), bool)
             xy, idx = np.unique(np.round(pts[sel, :2], 2), axis=0, return_index=True)
             g = RBFInterpolator(xy, zc[sel][idx], kernel="thin_plate_spline", smoothing=1.0, degree=1)
-            fields.append((lambda P, g=g: T(P) - g(P[:, :2])) if rel else (lambda P, g=g: P[:, 2] - g(P[:, :2])))
+            fields.append((lambda P, g=g: T(P) - self._xy_eval(g, P)) if rel else (lambda P, g=g: P[:, 2] - self._xy_eval(g, P)))
         return fields
+
+    def _xy_eval(self, g, P):
+        """g(x, y) en P; en la grilla del modelo evalúa una vez por columna (nx*ny) y repite en z."""
+        P0 = getattr(self, "_P", None)
+        if P0 is not None and P is P0:
+            nx, ny, nz = self._dims
+            return np.tile(g(P[:nx * ny, :2]), nz)
+        return g(P[:, :2])
 
     def _body_field(self, unit, P):
         """Cuerpo cerrado (>0 dentro) por RBF 3D, evaluado solo cerca de sus datos."""
@@ -127,7 +135,12 @@ class GeoModel:
         keep = np.all((pts > lo - CAP) & (pts < hi + CAP), axis=1)
         near = np.all((P > lo) & (P < hi), axis=1)
         out = np.full(len(P), -CAP)
-        out[near] = fit_field(pts[keep], vals[keep])(P[near])
+        # el RBF 3D es caro: se evalúa en una grilla gruesa (2 celdas) y se interpola trilineal
+        step = 2 * self.cell
+        axes = [np.arange(lo[i], hi[i] + step, step) for i in range(3)]
+        G = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+        coarse = fit_field(pts[keep], vals[keep])(G).reshape([len(a) for a in axes])
+        out[near] = RegularGridInterpolator(axes, coarse)(P[near])
         return out
 
     def build(self):
@@ -144,6 +157,7 @@ class GeoModel:
         dims = np.ceil((hi - lo) / sp).astype(int) + 1
         grid = pv.ImageData(dimensions=dims, spacing=sp, origin=lo)
         P = np.asarray(grid.points)
+        self._P, self._dims = P, tuple(dims)
 
         t = T(P)
         blocks = self._blocks()

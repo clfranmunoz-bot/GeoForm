@@ -100,7 +100,8 @@ class SectionView(QtWidgets.QWidget):
         v.addWidget(self.hint)
 
         self.axis.currentIndexChanged.connect(self.draw)
-        self.pos.valueChanged.connect(self.draw)
+        self.pos.sliderReleased.connect(self.draw)  # redibujar al soltar, no en cada paso
+        self.pos.valueChanged.connect(lambda _: None if self.pos.isSliderDown() else self.draw())
         self.tol.valueChanged.connect(self.draw)
         undo.clicked.connect(self._undo)
         clear.clicked.connect(self._clear_picks)

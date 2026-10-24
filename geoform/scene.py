@@ -218,7 +218,7 @@ def decorate(plotter, project, zscale=1.0):
                       font_family="arial", font_size=10, fmt="%.0f", n_xlabels=5, n_ylabels=5, n_zlabels=4,
                       axes_ranges=b)
     plotter.add_axes(color=c["text"], line_width=2)
-    plotter.enable_anti_aliasing("ssaa")
+    plotter.enable_anti_aliasing("fxaa")  # ssaa renderiza 4x: muy lento al rotar
 
 
 def plot_project(project, keys=None, screenshot=None, clip=None, view=None, size=(1600, 1000), opacity=None, zscale=1.0):
