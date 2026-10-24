@@ -15,6 +15,9 @@
   "intrusions": [
     "Porfido"
   ],
+  "veins": [
+    "Veta"
+  ],
   "faults": [
     {
       "name": "Falla Principal",
@@ -39,7 +42,8 @@
   ],
   "density": {
     "Porfido": 2.7,
-    "Cobertura": 2.0
+    "Cobertura": 2.0,
+    "Veta": 2.9
   },
   "cutoffs": [
     0.0,
@@ -53,5 +57,13 @@
     1.2,
     1.5
   ],
-  "colors": {}
+  "colors": {},
+  "picks": {},
+  "volumes": [],
+  "topcut": null,
+  "shells": [
+    0.5,
+    1.0
+  ],
+  "pit": {}
 }

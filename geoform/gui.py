@@ -854,7 +854,7 @@ class ParametersDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.p = project
         self.setWindowTitle("Parámetros del modelo")
-        self.resize(680, 700)
+        self.resize(680, 920)
         f = QtWidgets.QFormLayout(self)
         f.setContentsMargins(20, 18, 20, 18)
         f.setVerticalSpacing(10)
@@ -898,6 +898,21 @@ class ParametersDialog(QtWidgets.QDialog):
         f.addRow("Largo de compósito (m)", self.comp)
         self.block = QtWidgets.QDoubleSpinBox(minimum=2, maximum=100, value=project.cfg["block"][0])
         f.addRow("Tamaño de bloque (m)", self.block)
+        self.veins = QtWidgets.QLineEdit(", ".join(project.cfg["veins"]))
+        self.veins.setPlaceholderText("litologías separadas por coma, p. ej. Veta")
+        f.addRow("Vetas", self.veins)
+        from .pit import DEFAULTS as PIT
+        f.addRow(QtWidgets.QLabel("PIT ÓPTIMO · parámetros económicos", objectName="SectionTitle"))
+        self.pit = {}
+        for key, label, lo, hi, dec in (("price", "Precio del metal (US$/t)", 0, 1e7, 0),
+                                        ("recovery", "Recuperación (0-1)", 0, 1, 2),
+                                        ("mine_cost", "Costo mina (US$/t)", 0, 1e3, 2),
+                                        ("proc_cost", "Costo planta (US$/t)", 0, 1e3, 2),
+                                        ("block", "Bloque del pit (m)", 5, 100, 0)):
+            w = QtWidgets.QDoubleSpinBox(minimum=lo, maximum=hi, decimals=dec,
+                                         value=float(project.cfg["pit"].get(key, PIT[key])))
+            self.pit[key] = w
+            f.addRow(label, w)
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -926,6 +941,8 @@ class ParametersDialog(QtWidgets.QDialog):
         c["element"] = self.element.text()
         c["cell"], c["composite"] = self.cell.value(), self.comp.value()
         c["block"] = [self.block.value()] * 3
+        c["veins"] = [v.strip() for v in self.veins.text().split(",") if v.strip()]
+        c["pit"] = {k: w.value() for k, w in self.pit.items()}
 
 
 def run(project, smoke=False):

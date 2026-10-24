@@ -16,6 +16,7 @@ DEFAULTS = {
     "assays": None, "topography": None, "satellite": None,
     "stratigraphy": None,          # techo -> base; None = orden por profundidad media
     "intrusions": [],
+    "veins": [],                   # litologías modeladas como veta (techo/piso sobre plano medio)
     "faults": [],                  # [{name, point [x,y,elev], dip_direction, dip}]
     "cell": 10.0,
     "element": "Cu", "unit": "%",
@@ -70,9 +71,9 @@ class Project:
     def load(self):
         self.collars, self.surveys, self.intervals, units = load_project(
             self.file("collars"), self.file("surveys"), self.file("intervals"))
-        intr = self.cfg["intrusions"]
-        self.strat = self.cfg["stratigraphy"] or [u for u in units if u not in intr]
-        self.units = self.strat + list(intr)
+        intr, veins = self.cfg["intrusions"], self.cfg["veins"]
+        self.strat = [u for u in (self.cfg["stratigraphy"] or units) if u not in intr and u not in veins]
+        self.units = self.strat + list(intr) + [v for v in veins if v in units]
         self.assays = load_assays(self.file("assays"), self.cfg["element"]) if self.file("assays") else None
         self.dem = None
         if self.file("topography"):
@@ -86,7 +87,7 @@ class Project:
         self.log(f"Modelo geológico: {len(self.collars)} sondajes, unidades {', '.join(self.units)}")
         self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
                               self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"],
-                              self.cfg["picks"], self.cfg["volumes"]).build()
+                              self.cfg["picks"], self.cfg["volumes"], self.units[len(self.strat) + len(self.cfg["intrusions"]):]).build()
         self.blocks = self.vario = self.comp = self.all_comp = self.pit = self.xval = None
         if estimate and self.assays:
             self.estimate()
@@ -206,7 +207,8 @@ def demo_project():
         return Project.open(path)
     p = Project(path, name="Demo Pórfido Cu", assays="assays.csv", topography="terrain.asc",
                 satellite="satellite.png", stratigraphy=synth.STRAT, intrusions=[synth.INTRUSION],
-                faults=[synth.FAULT], domain=synth.INTRUSION, density={"Porfido": 2.7, "Cobertura": 2.0})
+                veins=[synth.VEIN], faults=[synth.FAULT], domain=synth.INTRUSION,
+                density={"Porfido": 2.7, "Cobertura": 2.0, "Veta": 2.9})
     p.save()
     return p
 

@@ -16,6 +16,9 @@ FAULT = {"name": "Falla Principal", "point": [1330.0, 2280.0, 400.0], "dip_direc
 THROW = 50.0
 STRAT = ["Cobertura", "Volcanico", "Sedimentario", "Basamento"]
 INTRUSION = "Porfido"
+# veta: cuerpo tabular de 5-7 m, manteo 60° al ONO, extensión ~170 m alrededor del centro
+VEIN = "Veta"
+VEIN_PLANE = {"center": (1450.0, 2170.0, 330.0), "dip_direction": 300.0, "dip": 60.0, "radius": 170.0}
 
 
 def topo_elev(x, y):
@@ -47,7 +50,21 @@ def porphyry(x, y, z):
     return 1 + lobes - (dx ** 2 + dy ** 2 + dz ** 2)
 
 
+def vein(x, y, z):
+    """(distancia firmada al plano medio, espesor local, distancia lateral al centro)."""
+    v = VEIN_PLANE
+    dd, dip = np.radians(v["dip_direction"]), np.radians(v["dip"])
+    n = np.array([np.sin(dd) * np.sin(dip), np.cos(dd) * np.sin(dip), np.cos(dip)])
+    d = np.array([x, y, z]) - v["center"]
+    w = float(d @ n)
+    lat = float(np.linalg.norm(d - w * n))
+    return w, 6.0 + 1.5 * np.sin(x / 35.0) * np.cos(y / 45.0), lat
+
+
 def lithology(x, y, z):
+    w, th, lat = vein(x, y, z)
+    if abs(w) < th / 2 and lat < VEIN_PLANE["radius"] and z < _contacts(x, y)[0]:
+        return VEIN
     if porphyry(x, y, z) > 0 and z < _contacts(x, y)[0]:
         return INTRUSION
     zz = z + THROW if fault_side(x, y, z) > 0 else z  # bloque colgante desplazado
@@ -63,7 +80,9 @@ def lithology(x, y, z):
 
 def cu_grade(x, y, z, lith, rng):
     r2 = ((x - 1300) / 170) ** 2 + ((y - 2290) / 140) ** 2 + ((z - 300) / 200) ** 2
-    if lith == INTRUSION:
+    if lith == VEIN:
+        g = 2.2 + 0.6 * np.sin(x / 50.0)
+    elif lith == INTRUSION:
         g = 0.35 + 1.4 * np.exp(-r2) + 0.25 * np.sin(z / 25 + x / 40)
     elif lith == "Cobertura":
         g = 0.01

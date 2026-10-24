@@ -27,7 +27,7 @@ def accuracy(p, n=3000):
 
 def scenarios(base):
     std = dict(assays="assays.csv", topography="terrain.asc", stratigraphy=synth.STRAT,
-               intrusions=[synth.INTRUSION], faults=[synth.FAULT], domain=synth.INTRUSION)
+               intrusions=[synth.INTRUSION], veins=[synth.VEIN], faults=[synth.FAULT], domain=synth.INTRUSION)
     yield "base (celda 10)", base, std
     yield "sin topografía (DEM)", base, {**std, "topography": None}
     yield "sin falla declarada", base, {**std, "faults": []}

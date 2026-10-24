@@ -75,13 +75,14 @@ class GeoModel:
     faults: planos (ver plane_field). dem: (xs, ys, Z) en elevación o None."""
 
     def __init__(self, collars, surveys, intervals, strat, intrusions=(), faults=(), dem=None, cell=10.0,
-                 picks=None, volumes=()):
+                 picks=None, volumes=(), veins=()):
         """picks: {unidad: [[x, y, elev], ...]} contactos trazados a mano para el techo de la unidad.
         volumes: [{name, top, bottom}] volúmenes entre dos superficies (nombres de self.surfaces)."""
         self.collars, self.surveys, self.intervals = collars, surveys, intervals
         self.picks, self.custom_volumes = picks or {}, list(volumes)
+        self.veins = [v for v in veins if v not in strat and v not in intrusions]
         self.strat, self.intrusions, self.faults = list(strat), list(intrusions), list(faults)
-        self.units = self.strat + self.intrusions
+        self.units = self.strat + self.intrusions + self.veins
         self.dem, self.cell = dem, cell
 
     # -- campos ---------------------------------------------------------------------
@@ -143,6 +144,78 @@ class GeoModel:
         out[near] = RegularGridInterpolator(axes, coarse)(P[near])
         return out
 
+    def _vein(self, unit):
+        """Veta estilo Leapfrog: techo (HW) y piso (FW) de cada intersección -> plano medio por PCA;
+        HW y FW se interpolan como w(u, v) sobre ese plano (TPS). Límite lateral = distancia a la
+        envolvente convexa de las intersecciones + medio espaciado. -> dict con lo necesario para campo y malla."""
+        from scipy.spatial import cKDTree
+
+        hw, fw = [], []
+        for hid, ints in self.intervals.items():
+            x, y, z, az, dip = self.collars[hid]
+            mds, path = hole_path(x, y, z, az, dip, self.surveys.get(hid, []))
+            for f, t, lith in ints:
+                if lith == unit:
+                    hw.append(_point_at_depth(mds, path, f))
+                    fw.append(_point_at_depth(mds, path, t))
+        if len(hw) < 4:
+            return None
+        hw, fw = np.array(hw), np.array(fw)
+        mid = (hw + fw) / 2
+        c = mid.mean(axis=0)
+        _, _, vt = np.linalg.svd(mid - c)
+        e1, e2, n = vt  # n = normal del plano medio (menor varianza)
+        uv = np.column_stack([(mid - c) @ e1, (mid - c) @ e2])
+        a, b = (hw - c) @ n, (fw - c) @ n
+        top, bot = np.maximum(a, b), np.minimum(a, b)  # lado + / lado - del plano medio
+        kw = dict(kernel="thin_plate_spline", smoothing=1.0, degree=1)
+        tree = cKDTree(uv)
+        spacing = np.median(tree.query(uv, k=2)[0][:, 1])
+        from scipy.spatial import Delaunay
+        return {"c": c, "e1": e1, "e2": e2, "n": n, "uv": uv, "tree": tree, "R": 0.5 * spacing, "hull": Delaunay(uv),
+                "top": RBFInterpolator(uv, top, **kw), "bot": RBFInterpolator(uv, bot, **kw)}
+
+    def _vein_field(self, V, P):
+        """>0 dentro de la veta (metros), acotado lateralmente."""
+        d = P - V["c"]
+        uv = np.column_stack([d @ V["e1"], d @ V["e2"]])
+        w = d @ V["n"]
+        out = np.full(len(P), -CAP)
+        lat = self._vein_lateral(V, uv)
+        near = lat > -2 * CAP
+        out[near] = np.minimum(np.minimum(w[near] - V["bot"](uv[near]), V["top"](uv[near]) - w[near]), lat[near])
+        return out
+
+    @staticmethod
+    def _vein_lateral(V, uv):
+        """>0 dentro del contorno de la veta: envolvente convexa de las intersecciones + margen R."""
+        lat = V["R"] - V["tree"].query(uv)[0]
+        return np.where(V["hull"].find_simplex(uv) >= 0, np.maximum(lat, CAP), lat)
+
+    def vein_mesh(self, unit, step=None):
+        """Sólido cerrado de la veta: lámina HW/FW muestreada sobre el plano medio (no depende de
+        la resolución de la grilla, así una veta de 5 m no se pierde entre celdas de 10 m)."""
+        import pyvista as pv
+
+        V = self.vein_info[unit]
+        step = step or self.cell / 2
+        lo, hi = V["uv"].min(axis=0) - V["R"], V["uv"].max(axis=0) + V["R"]
+        us, vs = np.arange(lo[0], hi[0] + step, step), np.arange(lo[1], hi[1] + step, step)
+        U, W = np.meshgrid(us, vs, indexing="ij")
+        uv = np.column_stack([U.ravel(), W.ravel()])
+        t, b = V["top"](uv), V["bot"](uv)
+        b = np.minimum(b, t - 0.5)  # espesor mínimo 0.5 m
+        layers = [V["c"] + uv[:, :1] * V["e1"] + uv[:, 1:] * V["e2"] + w[:, None] * V["n"] for w in (b, t)]
+        X = np.stack([L.reshape(len(us), len(vs), 3) for L in layers], axis=2)
+        g = pv.StructuredGrid(X[..., 0], X[..., 1], X[..., 2])
+        inside = self._vein_lateral(V, uv) > 0
+        cm = (inside.reshape(len(us), len(vs))[:-1, :-1] & inside.reshape(len(us), len(vs))[1:, 1:])
+        g.cell_data["in"] = cm.ravel(order="F").astype(float)
+        T = self.topo(g.cell_centers().points)
+        g.cell_data["in"] *= (T > 0)  # bajo el terreno
+        s = g.threshold(0.5, scalars="in").extract_surface(algorithm="dataset_surface")
+        return s.smooth_taubin(n_iter=10) if s.n_points else s
+
     def build(self):
         import pyvista as pv
 
@@ -194,6 +267,18 @@ class GeoModel:
             top, bot = self.surfaces[v["top"]], self.surfaces[v["bottom"]]
             self.custom[v["name"]] = np.minimum(np.minimum(t, top), -bot)
 
+        self.vein_info = {}
+        for u in self.veins:  # las vetas cortan todo (son las más jóvenes)
+            V = self._vein(u)
+            body = self._vein_field(V, P) if V is not None else np.full(len(P), -CAP)
+            if V is not None:
+                self.vein_info[u] = V
+            for v in self.strat + self.intrusions:
+                solids[v] = np.minimum(solids[v], -body)
+                if v in raw:
+                    raw[v] = [np.minimum(s, -body) for s in raw[v]]
+            solids[u] = np.minimum(body, t)
+
         self.grid, self.topo, self.solids, self.raw = grid, T, solids, raw
         self.block_signs = [s for s, _ in blocks]
         self.fault_values = [plane_field(f)(P) for f in self.faults]
@@ -207,7 +292,10 @@ class GeoModel:
     def volumes(self):
         """{unidad: m3} por conteo de nodos (cada nodo representa un vóxel)."""
         v = float(np.prod(self.spacing))
-        return {u: float((self.labels == k).sum()) * v for k, u in enumerate(self.units)}
+        out = {u: float((self.labels == k).sum()) * v for k, u in enumerate(self.units)}
+        for u in self.vein_info:  # una veta delgada se mide mejor en su propia malla cerrada
+            out[u] = float(self.vein_mesh(u).volume)
+        return out
 
     def custom_volume(self, name):
         return float((self.custom[name] > 0).sum()) * float(np.prod(self.spacing))
@@ -222,6 +310,11 @@ class GeoModel:
         return m.smooth_taubin(n_iter=20) if m.n_points else m
 
     def solid_mesh(self, unit):
+        if unit in getattr(self, "vein_info", {}):
+            return self.vein_mesh(unit)
+        return self._solid_mesh(unit)
+
+    def _solid_mesh(self, unit):
         """Sólido cerrado. Con fallas, cada bloque se mallea por separado y se corta exacto en el
         plano de falla (escalón nítido, como Leapfrog) en vez de depender de la grilla."""
         if not self.faults or unit not in self.raw:
@@ -284,7 +377,12 @@ class GeoModel:
         ijk = np.rint((np.asarray(pts, float) - g.origin) / self.spacing).astype(int)
         ijk = np.clip(ijk, 0, np.array(g.dimensions) - 1)
         nx, ny, _ = g.dimensions
-        return (self.labels if values is None else values)[ijk[:, 0] + nx * (ijk[:, 1] + ny * ijk[:, 2])]
+        out = (self.labels if values is None else values)[ijk[:, 0] + nx * (ijk[:, 1] + ny * ijk[:, 2])]
+        if values is None:  # vetas: campo exacto, una veta de 5 m no cabe en la grilla
+            for u, V in getattr(self, "vein_info", {}).items():
+                inside = (self._vein_field(V, np.asarray(pts, float)) > 0) & (out >= 0)
+                out = np.where(inside, self.units.index(u), out)
+        return out
 
 
 def demo():
@@ -301,7 +399,7 @@ def demo():
         collars, surveys, intervals, _ = load_project(*(os.path.join(tmp, f) for f in ("collars.csv", "surveys.csv", "intervals.csv")))
         dem = load_dem(os.path.join(tmp, "terrain.asc"))
     m = GeoModel(collars, surveys, intervals, synth.STRAT, [synth.INTRUSION], [synth.FAULT],
-                 dem=dem, cell=12.0).build()
+                 dem=dem, cell=12.0, veins=[synth.VEIN]).build()
 
     rng = np.random.default_rng(3)
     p = np.column_stack([rng.uniform(1050, 1550, 4000), rng.uniform(2050, 2550, 4000), rng.uniform(100, 520, 4000)])
@@ -313,6 +411,13 @@ def demo():
     assert acc > 0.85, acc
     vols = m.volumes()
     assert all(v > 0 for v in vols.values()), vols
+    # veta: puntos reales dentro de la veta y dentro de la zona perforada -> el modelo debe decir Veta
+    c = np.array(synth.VEIN_PLANE["center"])
+    q = c + rng.uniform(-90, 90, (20000, 3))
+    inv = np.array([synth.lithology(*r) == synth.VEIN for r in q])
+    pv_ = np.array(m.units)[m.label_at(q[inv] * [1, 1, -1])]
+    vein_hit = float((pv_ == synth.VEIN).mean())
+    assert vein_hit > 0.6, vein_hit
     # superficies, volumen entre dos superficies elegidas y contacto trazado a mano
     names = list(m.surfaces)
     assert all(m.surface_mesh(n).n_points for n in names), names
@@ -320,7 +425,7 @@ def demo():
                   picks={synth.STRAT[2]: [[1300, 2300, 300.0]]},
                   volumes=[{"name": "Paquete", "top": names[1], "bottom": names[-1]}]).build()
     assert m2.custom_volume("Paquete") > 0 and m2.solid_mesh("Paquete").n_points
-    print(f"geomodel: OK  acierto litologico {acc:.1%} en {ok.sum()} puntos; "
+    print(f"geomodel: OK  acierto litologico {acc:.1%} en {ok.sum()} puntos; veta {vein_hit:.0%}; "
           + ", ".join(f"{u} {v / 1e6:.1f} Mm3" for u, v in vols.items()))
     return m
 
