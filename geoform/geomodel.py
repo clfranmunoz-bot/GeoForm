@@ -74,8 +74,12 @@ class GeoModel:
     """strat: unidades de techo a base (joven -> viejo). intrusions: cuerpos que cortan.
     faults: planos (ver plane_field). dem: (xs, ys, Z) en elevación o None."""
 
-    def __init__(self, collars, surveys, intervals, strat, intrusions=(), faults=(), dem=None, cell=10.0):
+    def __init__(self, collars, surveys, intervals, strat, intrusions=(), faults=(), dem=None, cell=10.0,
+                 picks=None, volumes=()):
+        """picks: {unidad: [[x, y, elev], ...]} contactos trazados a mano para el techo de la unidad.
+        volumes: [{name, top, bottom}] volúmenes entre dos superficies (nombres de self.surfaces)."""
         self.collars, self.surveys, self.intervals = collars, surveys, intervals
+        self.picks, self.custom_volumes = picks or {}, list(volumes)
         self.strat, self.intrusions, self.faults = list(strat), list(intrusions), list(faults)
         self.units = self.strat + self.intrusions
         self.dem, self.cell = dem, cell
@@ -97,6 +101,8 @@ class GeoModel:
         pts, vals = hole_samples(self.collars, self.surveys, self.intervals,
                                  lambda l: l in below, lambda l: l in self.strat)
         pts = pts[vals == 0]
+        extra = np.asarray(self.picks.get(self.strat[k], []), float).reshape(-1, 3) * [1, 1, -1]
+        pts = np.vstack([pts, extra])
         if len(pts) < 3:
             raise ValueError(f"muy pocos contactos para el techo de {self.strat[k]} ({len(pts)})")
         rel = k == 1
@@ -161,6 +167,16 @@ class GeoModel:
                 solids[v] = np.minimum(solids[v], -body)
             solids[u] = np.minimum(body, t)
 
+        # superficies de contacto (una por techo, combinando bloques de falla) y volúmenes del usuario
+        blk = np.argmax(np.stack(sides), axis=0)
+        self.surfaces = {"Topografía": t}
+        for k in range(1, len(self.strat)):
+            self.surfaces[f"Techo {self.strat[k]}"] = np.choose(blk, tops[k])
+        self.custom = {}
+        for v in self.custom_volumes:
+            top, bot = self.surfaces[v["top"]], self.surfaces[v["bottom"]]
+            self.custom[v["name"]] = np.minimum(np.minimum(t, top), -bot)
+
         self.grid, self.topo, self.solids = grid, T, solids
         self.fault_values = [plane_field(f)(P) for f in self.faults]
         stack = np.stack([solids[u] for u in self.units])
@@ -175,10 +191,22 @@ class GeoModel:
         v = float(np.prod(self.spacing))
         return {u: float((self.labels == k).sum()) * v for k, u in enumerate(self.units)}
 
-    def solid_mesh(self, unit):
-        """Sólido cerrado de la unidad (isosuperficie 0, bordes del dominio tapados)."""
+    def custom_volume(self, name):
+        return float((self.custom[name] > 0).sum()) * float(np.prod(self.spacing))
+
+    def surface_mesh(self, name):
+        """Malla de una superficie de contacto (isosuperficie 0), recortada al subsuelo."""
         g = self.grid.copy()
-        s = self.solids[unit].reshape(g.dimensions, order="F").copy()
+        g.point_data["f"] = self.surfaces[name]
+        m = g.contour([0.0], scalars="f")
+        if name != "Topografía" and m.n_points:
+            m = m.clip_scalar(scalars="topo", value=0.0, invert=False)
+        return m.smooth_taubin(n_iter=20) if m.n_points else m
+
+    def solid_mesh(self, unit):
+        """Sólido cerrado de una unidad o de un volumen del usuario (isosuperficie 0, bordes tapados)."""
+        g = self.grid.copy()
+        s = (self.solids[unit] if unit in self.solids else self.custom[unit]).reshape(g.dimensions, order="F").copy()
         s[[0, -1], :, :] = s[:, [0, -1], :] = -1.0  # tapa laterales -> sólido cerrado
         s[:, :, [0, -1]] = -1.0
         g.point_data["s"] = s.ravel(order="F")
@@ -202,13 +230,21 @@ class GeoModel:
         vox.cell_data["litho"] = self.labels
         return vox
 
-    def label_at(self, pts):
-        """Unidad (índice, -1 aire) en puntos arbitrarios: vecino más cercano en la grilla."""
+    def field_at(self, values, pts):
+        """Interpolación trilineal de un campo de la grilla en puntos arbitrarios (perfiles suaves)."""
+        g = self.grid
+        axes = [g.origin[i] + self.spacing[i] * np.arange(g.dimensions[i]) for i in range(3)]
+        f = RegularGridInterpolator(axes, np.asarray(values).reshape(g.dimensions, order="F"),
+                                    bounds_error=False, fill_value=None)
+        return f(np.asarray(pts, float))
+
+    def label_at(self, pts, values=None):
+        """Unidad (índice, -1 aire), o `values` de la grilla, en puntos arbitrarios: vecino más cercano."""
         g = self.grid
         ijk = np.rint((np.asarray(pts, float) - g.origin) / self.spacing).astype(int)
         ijk = np.clip(ijk, 0, np.array(g.dimensions) - 1)
         nx, ny, _ = g.dimensions
-        return self.labels[ijk[:, 0] + nx * (ijk[:, 1] + ny * ijk[:, 2])]
+        return (self.labels if values is None else values)[ijk[:, 0] + nx * (ijk[:, 1] + ny * ijk[:, 2])]
 
 
 def demo():
@@ -237,6 +273,13 @@ def demo():
     assert acc > 0.85, acc
     vols = m.volumes()
     assert all(v > 0 for v in vols.values()), vols
+    # superficies, volumen entre dos superficies elegidas y contacto trazado a mano
+    names = list(m.surfaces)
+    assert all(m.surface_mesh(n).n_points for n in names), names
+    m2 = GeoModel(collars, surveys, intervals, synth.STRAT, [synth.INTRUSION], [synth.FAULT], dem=dem, cell=12.0,
+                  picks={synth.STRAT[2]: [[1300, 2300, 300.0]]},
+                  volumes=[{"name": "Paquete", "top": names[1], "bottom": names[-1]}]).build()
+    assert m2.custom_volume("Paquete") > 0 and m2.solid_mesh("Paquete").n_points
     print(f"geomodel: OK  acierto litologico {acc:.1%} en {ok.sum()} puntos; "
           + ", ".join(f"{u} {v / 1e6:.1f} Mm3" for u, v in vols.items()))
     return m

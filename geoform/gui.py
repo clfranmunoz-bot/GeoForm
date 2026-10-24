@@ -1,6 +1,6 @@
 """GUI de GeoForm: árbol de proyecto | escena 3D | capas | inspector.
 
-Pestañas centrales: Escena 3D, Variograma, Recursos. El cálculo del modelo
+Pestañas centrales: Escena 3D, Perfil 2D, Variograma, Recursos. El cálculo del modelo
 corre en un hilo aparte (QThread) con un velo de progreso sobre el área central.
 """
 import os
@@ -102,6 +102,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.setIconSize(QtCore.QSize(16, 16))
         self.plotter = QtInteractor(self)
         self.tabs.addTab(self.plotter, theme.icon("scene"), "Escena 3D")
+        from .section2d import SectionView
+        self.section = SectionView(self)
+        self.tabs.addTab(self.section, theme.icon("section"), "Perfil 2D")
         self.vario_tab = QtWidgets.QWidget()
         QtWidgets.QVBoxLayout(self.vario_tab).setContentsMargins(20, 16, 20, 16)
         self.tabs.addTab(self.vario_tab, theme.icon("vario"), "Variograma")
@@ -279,6 +282,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._fill_tree()
         self.render_all()
         scene.set_view(self.plotter, p)
+        self.section.refresh()
         self._fill_variogram()
         self._fill_report()
 
@@ -310,6 +314,8 @@ class MainWindow(QtWidgets.QMainWindow):
             it.setCheckState(0, QtCore.Qt.Checked if key in self.visible else QtCore.Qt.Unchecked)
             if key.startswith("solid:"):
                 it.setIcon(0, self._swatch(scene.unit_color(p, key[6:])))
+            elif key.startswith("surface:"):
+                it.setIcon(0, self._swatch(scene.unit_color(p, key.split(" ", 1)[1])))
             group(g).addChild(it)
         if p.vario is not None:
             group("Estimación").addChild(QtWidgets.QTreeWidgetItem([f"Variograma: {p.vario}"]))

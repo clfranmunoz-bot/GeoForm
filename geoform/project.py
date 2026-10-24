@@ -25,6 +25,8 @@ DEFAULTS = {
     "density": {},                 # {litología: t/m3}; default 2.6
     "cutoffs": [0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5],
     "colors": {},
+    "picks": {},                   # {unidad: [[x,y,elev]]} contactos trazados en el perfil 2D
+    "volumes": [],                 # [{name, top, bottom}] volúmenes entre superficies
 }
 FILE_KEYS = ("collars", "surveys", "intervals", "assays", "topography", "satellite")
 
@@ -79,7 +81,8 @@ class Project:
 
         self.log(f"Modelo geológico: {len(self.collars)} sondajes, unidades {', '.join(self.units)}")
         self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
-                              self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"]).build()
+                              self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"],
+                              self.cfg["picks"], self.cfg["volumes"]).build()
         self.blocks = self.vario = self.comp = None
         if estimate and self.assays:
             self.estimate()
@@ -107,7 +110,8 @@ class Project:
 
     def volume_report(self):
         """[(unidad, m3, t)]"""
-        return [(u, v, v * self.density(u)) for u, v in self.model.volumes().items()]
+        out = [(u, v, v * self.density(u)) for u, v in self.model.volumes().items()]
+        return out + [(n, self.model.custom_volume(n), self.model.custom_volume(n) * self.density(n)) for n in self.model.custom]
 
     def grade_tonnage(self):
         from .estimation import grade_tonnage

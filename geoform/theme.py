@@ -44,6 +44,8 @@ ICONS = {
     "east": '<path d="M5 12h14M12 5l7 7-7 7"/>',
     "slice": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/>',
     "layers": '<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>',
+    "section": '<path d="M3 3v18h18"/><path d="M3 15c4-1 6-5 10-5s5 3 8 2"/><path d="M3 9c5 0 7-3 11-3"/>',
+    "pen": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     "folder": '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
     "drill": '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
     "topo": '<path d="M8 3l4 8 5-5 5 15H2L8 3z"/>',
@@ -58,7 +60,8 @@ ICONS = {
 
 GROUP_ICON = {"Sondajes": "drill", "Topografía": "topo", "Modelos geológicos": "iso",
               "Estructural": "fault", "Compósitos": "target", "Modelos de bloques": "blocks",
-              "Estimación": "vario", "Reportes": "report"}
+              "Estimación": "vario", "Reportes": "report",
+              "Superficies": "section", "Volúmenes del usuario": "layers"}
 
 
 def icon(name, color=TEXT2, size=20):

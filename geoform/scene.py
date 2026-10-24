@@ -28,7 +28,9 @@ def flip(mesh):
 
 def unit_color(project, unit):
     c = project.cfg.get("colors", {}).get(unit)
-    return c or PALETTE[project.units.index(unit) % len(PALETTE)]
+    if c or unit not in project.units:  # volúmenes del usuario: ámbar salvo color propio
+        return c or "#fbbf24"
+    return PALETTE[project.units.index(unit) % len(PALETTE)]
 
 
 def grade_clim(project):
@@ -122,6 +124,14 @@ def layers(project):
         for u in project.units:
             out.append((f"solid:{u}", "Modelos geológicos", u, lambda u=u: dict(
                 mesh=flip(m.solid_mesh(u)), color=unit_color(project, u), **SOLID)))
+        for n in m.surfaces:
+            if n != "Topografía":
+                out.append((f"surface:{n}", "Superficies", n, lambda n=n: dict(
+                    mesh=flip(m.surface_mesh(n)), color=unit_color(project, n.split(" ", 1)[1]),
+                    opacity=0.8, show_edges=True, edge_color="#0d1117", line_width=0.3, **SOLID)))
+        for v in m.custom:
+            out.append((f"volume:{v}", "Volúmenes del usuario", v, lambda v=v: dict(
+                mesh=flip(m.solid_mesh(v)), color=unit_color(project, v), **SOLID)))
         for i, f in enumerate(project.cfg["faults"]):
             out.append((f"fault:{i}", "Estructural", f["name"], lambda i=i: dict(
                 mesh=flip(m.fault_mesh(i)), color="#f43f5e", opacity=0.55, smooth_shading=True)))
