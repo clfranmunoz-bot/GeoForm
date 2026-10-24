@@ -94,8 +94,14 @@ class SectionView(QtWidgets.QWidget):
         bar.addStretch(1)
         bar.addWidget(vol)
         v.addLayout(bar)
-        self.fig, self.canvas = self.win._figure(10, 6)
-        v.addWidget(self.canvas, 1)
+        from pyvistaqt import QtInteractor
+
+        self.ve = QtWidgets.QDoubleSpinBox(minimum=1, maximum=5, singleStep=0.5, value=1, decimals=1, prefix="V ×")
+        self.ve.setToolTip("Exageración vertical del perfil")
+        bar.insertWidget(6, self.ve)
+        self.view = QtInteractor(self)  # perfil renderizado con VTK (como el corte de Leapfrog)
+        v.addWidget(self.view, 1)
+        self.view.track_click_position(self._click, side="left")
         self.hint = QtWidgets.QLabel("", objectName="Muted")
         v.addWidget(self.hint)
 
@@ -103,10 +109,10 @@ class SectionView(QtWidgets.QWidget):
         self.pos.sliderReleased.connect(self.draw)  # redibujar al soltar, no en cada paso
         self.pos.valueChanged.connect(lambda _: None if self.pos.isSliderDown() else self.draw())
         self.tol.valueChanged.connect(self.draw)
+        self.ve.valueChanged.connect(self.draw)
         undo.clicked.connect(self._undo)
         clear.clicked.connect(self._clear_picks)
         vol.clicked.connect(self._new_volume)
-        self.canvas.mpl_connect("button_press_event", self._click)
         self._history = []
 
     # -- datos ----------------------------------------------------------------------
@@ -123,92 +129,135 @@ class SectionView(QtWidgets.QWidget):
         pos = lo[1 - ax] + (hi[1 - ax] - lo[1 - ax]) * self.pos.value() / 100
         return ax, pos
 
-    def draw(self):
-        """Perfil estilo Leapfrog: lienzo azul noche completo, unidades planas con contactos finos,
-        rótulos dentro de cada unidad, sondajes finos con puntos de contacto y marco del modelo."""
-        from matplotlib import patheffects as pe
-        from matplotlib.patches import Rectangle
+    def draw(self, keep_camera=False):
+        """Corte ortogonal con VTK: caras de cada unidad, contactos finos, topografía, falla,
+        sondajes cercanos con puntos de contacto, rótulos y marco del modelo."""
+        import pyvista as pv
 
         p = self.win.project
         if p is None or p.model is None:
             return
         m, (ax_i, pos) = p.model, self._plane()
         self.pos_label.setText(f"{'Y' if ax_i == 0 else 'X'} = {pos:,.0f}")
-        H, E, P = section_grid(m, ax_i, pos, n=420)
-        NAVY = "#0b1636"
-        self.fig.clear()
-        self.fig.set_layout_engine("none")  # ejes a mano: el perfil llena el lienzo
-        self.fig.set_facecolor(NAVY)
-        ax = self.fig.add_axes([0.06, 0.08, 0.92, 0.86])  # el perfil ocupa todo el lienzo
-        ax.set_facecolor(NAVY)
-        halo = [pe.withStroke(linewidth=2.6, foreground="#0b1636")]
-        fields = {u: m.field_at(m.solids[u], P).reshape(H.shape) for u in p.units}
-        for u, f in fields.items():
-            if f.max() <= 0:
-                continue
-            col = scene.unit_color(p, u)
-            ax.contourf(H, E, f, levels=[0.0, f.max() + 1], colors=[col], antialiased=True)
-            ax.contour(H, E, f, levels=[0.0], colors=["#0b1636"], linewidths=0.6, alpha=0.8)
-            inside = f > 0  # rótulo en el punto más interior de la unidad
-            if inside.sum() > 60:
-                k = np.argmax(np.where(inside, f, -np.inf))
-                ax.text(H.flat[k], E.flat[k], u, ha="center", va="center", fontsize=9, color="white",
-                        fontweight="bold", path_effects=halo, zorder=7)
-        topo = m.field_at(m.surfaces["Topografía"], P).reshape(H.shape)
-        ax.contour(H, E, topo, levels=[0.0], colors=["#e5e7eb"], linewidths=1.3)
-        for fv in m.fault_values:
-            ax.contour(H, E, m.field_at(fv, P).reshape(H.shape), levels=[0.0], colors=["#ff5c8a"], linewidths=1.6)
-        for name, field in m.custom.items():
-            ax.contour(H, E, m.field_at(field, P).reshape(H.shape), levels=[0.0], colors=["#fbbf24"],
-                       linewidths=1.6, linestyles="dashed")
+        normal = (0.0, 1.0, 0.0) if ax_i == 0 else (1.0, 0.0, 0.0)
+        origin = (0.0, pos, 0.0) if ax_i == 0 else (pos, 0.0, 0.0)
+        toward = -1.0  # la cámara mira desde el lado negativo (sur / oeste)
+        off = np.array(normal) * toward  # desplaza líneas hacia la cámara: siempre sobre las caras
+        cam = self.view.camera_position if keep_camera and self.view.renderer.actors else None
+        pl = self.view
+        pl.clear()
+        pl.set_background("#0b1636", top="#1d2c4f")
+        g = scene.flip(m.grid)
+        for u, face in scene.section_faces(p, normal, origin):
+            pl.add_mesh(face, color=scene.unit_color(p, u), lighting=False, name=f"f:{u}")
+            g.point_data["s"] = m.solids[u]
+            edge = g.slice(normal=normal, origin=origin).contour([0.0], scalars="s")
+            if edge.n_points:
+                pl.add_mesh(edge.translate(off * 0.5, inplace=False), color="#0b1636", line_width=1.2, opacity=0.7)
+        for i, fv in enumerate(m.fault_values):  # campos en la grilla antes de cortar
+            g.point_data[f"f{i}"] = fv
+        for k, (name, field) in enumerate(m.custom.items()):
+            g.point_data[f"c{k}"] = field
+        sl = g.slice(normal=normal, origin=origin)
+        topo = sl.contour([0.0], scalars="topo")
+        if topo.n_points:
+            pl.add_mesh(topo.translate(off, inplace=False), color="#f1f5f9", line_width=2.2)
+        for i in range(len(m.fault_values)):
+            tr = sl.contour([0.0], scalars=f"f{i}")
+            if tr.n_points:
+                pl.add_mesh(tr.translate(off, inplace=False), color="#ff5c8a", line_width=2.6)
+        for k in range(len(m.custom)):
+            tr = sl.contour([0.0], scalars=f"c{k}")
+            if tr.n_points:
+                pl.add_mesh(tr.translate(off, inplace=False), color="#fbbf24", line_width=2.0)
+        # sondajes a menos de `ancho` del plano, proyectados sobre él
+        pts, cols = [], []
         for h, e, lith in hole_traces(p, ax_i, pos, self.tol.value()):
-            ax.plot(h, e, color="#cbd5e1", lw=0.9, alpha=0.85, zorder=4)
-            c = scene.unit_color(p, lith) if lith in p.units else "#8b98a8"
-            ax.scatter(h[[0, -1]], e[[0, -1]], s=9, color=c, edgecolor="#0b1636", linewidth=0.5, zorder=5)
-        for unit, pts in p.cfg["picks"].items():
-            q = np.asarray(pts, float).reshape(-1, 3)
+            P3 = np.zeros((len(h), 3))
+            P3[:, ax_i], P3[:, 1 - ax_i], P3[:, 2] = h, pos, e
+            P3 += off * 2
+            pl.add_mesh(pv.lines_from_points(P3), color="#e2e8f0", line_width=1.6, opacity=0.9)
+            pts += [P3[0], P3[-1]]
+            cols += [scene.unit_color(p, lith) if lith in p.units else "#8b98a8"] * 2
+        if pts:
+            cp = pv.PolyData(np.array(pts))
+            cp["rgb"] = np.array([[int(c[i:i + 2], 16) for i in (1, 3, 5)] for c in cols], np.uint8)
+            pl.add_mesh(cp, scalars="rgb", rgb=True, point_size=7, render_points_as_spheres=True)
+        for unit, q in p.cfg["picks"].items():
+            q = np.asarray(q, float).reshape(-1, 3)
             q = q[np.abs(q[:, 1 - ax_i] - pos) < self.tol.value()]
             if len(q) and unit in p.units:
-                ax.scatter(q[:, ax_i], q[:, 2], s=40, marker="D", color=scene.unit_color(p, unit), edgecolor="white",
-                           linewidth=1.0, zorder=6)
-        top = E[topo > 0].max()
-        ax.add_patch(Rectangle((H.min(), E.min()), H.max() - H.min(), top - E.min(), fill=False,
-                               edgecolor="#d946ef", lw=1.0, zorder=6))  # marco del modelo
-        ax.set_aspect("equal", adjustable="datalim")
-        ax.set_xlim(H.min() - 20, H.max() + 20)
-        ax.set_ylim(E.min() - 20, top + 40)
-        for sp in ax.spines.values():
-            sp.set_visible(False)
-        ax.tick_params(colors="#94a3b8", labelsize=8, length=3)
-        ax.grid(True, color="#ffffff", alpha=0.05, lw=0.6)
-        ax.set_xlabel("Este X (m)" if ax_i == 0 else "Norte Y (m)", color="#94a3b8", fontsize=9)
-        ax.set_ylabel("Elevación (m)", color="#94a3b8", fontsize=9)
-        ax.text(0.01, 0.98, f"{self.axis.currentText().split(' (')[0]}  ·  {self.pos_label.text()}  ·  "
-                f"ancho {self.tol.value():.0f} m", transform=ax.transAxes, va="top", color="#e2e8f0", fontsize=10,
-                path_effects=halo)
-        self.canvas.draw_idle()
+                pl.add_mesh(pv.PolyData(q + off * 3), color=scene.unit_color(p, unit), point_size=13,
+                            render_points_as_spheres=True)
+        # rótulos en el punto más interior de cada unidad
+        H, E, P = section_grid(m, ax_i, pos, n=160)
+        lab_pts, labs = [], []
+        for u in p.units:
+            f = m.field_at(m.solids[u], P)
+            if (f > 0).sum() > 25:
+                k = int(np.argmax(f))
+                q = np.zeros(3)
+                q[ax_i], q[1 - ax_i], q[2] = H.flat[k], pos, E.flat[k]
+                lab_pts.append(q + off * 4)
+                labs.append(u)
+        if labs:
+            pl.add_point_labels(np.array(lab_pts), labs, font_size=13, text_color="white", bold=True,
+                                shape=None, show_points=False, always_visible=True, font_family="arial",
+                                shadow=True)
+        b = np.array(m.grid.bounds).reshape(3, 2)
+        top = float(E[m.field_at(m.surfaces["Topografía"], P).reshape(H.shape) > 0].max())
+        a0, a1 = b[ax_i]
+        frame = np.zeros((5, 3))
+        frame[:, ax_i] = [a0, a1, a1, a0, a0]
+        frame[:, 1 - ax_i] = pos
+        frame[:, 2] = [E.min(), E.min(), top, top, E.min()]
+        pl.add_mesh(pv.lines_from_points(frame + off * 2), color="#d946ef", line_width=1.6)
+        pl.set_scale(zscale=self.ve.value())
+        pl.enable_parallel_projection()
+        pl.enable_anti_aliasing("fxaa")
+        pl.add_text(f"{self.axis.currentText().split(' (')[0]}  ·  {self.pos_label.text()}  ·  ancho "
+                    f"{self.tol.value():.0f} m  ·  V ×{self.ve.value():g}", position="upper_left", font_size=8,
+                    color="#e2e8f0", font="arial")
+        if cam:
+            pl.camera_position = cam
+        else:
+            c = np.zeros(3)
+            c[ax_i], c[1 - ax_i], c[2] = (a0 + a1) / 2, pos, (E.min() + top) / 2 * self.ve.value()
+            pl.camera.focal_point = c
+            pl.camera.position = c + np.array(normal) * toward * 5000
+            pl.camera.up = (0, 0, 1)
+            pl.reset_camera()
+            wpx, hpx = max(self.view.width(), 1), max(self.view.height(), 1)
+            half_h = (top - E.min()) * self.ve.value() / 2
+            half_w = (a1 - a0) / 2
+            pl.camera.parallel_scale = 1.15 * max(half_h, half_w * hpx / wpx)  # la sección llena la vista
+        pl.render()
         n = sum(len(v) for v in p.cfg["picks"].values())
-        self.hint.setText(f"Línea blanca = topografía · rosa = falla · ámbar = volúmenes del usuario · marco = límite "
-                          f"del modelo · {n} puntos trazados. «Trazar contacto» + clic; F5 recalcula las mallas.")
+        self.hint.setText(f"Rueda = zoom · clic derecho/medio = desplazar · blanco = topografía · rosa = falla · "
+                          f"ámbar = volúmenes · magenta = límite del modelo · {n} puntos trazados. "
+                          f"«Trazar contacto» + clic; F5 recalcula.")
 
     # -- edición --------------------------------------------------------------------
-    def _click(self, ev):
+    def _click(self, xyz):
+        """Clic en el perfil (coordenadas de mundo en elevación) -> punto de contacto en el plano."""
         p = self.win.project
-        if not self.pick.isChecked() or ev.inaxes is None or ev.button != 1 or not self.unit.currentText():
+        if not self.pick.isChecked() or not self.unit.currentText() or p is None or p.model is None:
             return
         ax_i, pos = self._plane()
-        xy = [ev.xdata, pos] if ax_i == 0 else [pos, ev.xdata]
+        q = list(map(float, xyz))
+        q[2] /= self.ve.value()  # deshace la exageración vertical
+        q[1 - ax_i] = pos
         unit = self.unit.currentText()
-        p.cfg["picks"].setdefault(unit, []).append([round(xy[0], 2), round(xy[1], 2), round(ev.ydata, 2)])
+        p.cfg["picks"].setdefault(unit, []).append([round(v, 2) for v in q])
         self._history.append(unit)
-        self.win.log(f"Contacto trazado (techo {unit}): {xy[0]:,.1f}, {xy[1]:,.1f}, {ev.ydata:,.1f}")
-        self.draw()
+        self.win.log(f"Contacto trazado (techo {unit}): {q[0]:,.1f}, {q[1]:,.1f}, {q[2]:,.1f}")
+        self.draw(keep_camera=True)
 
     def _undo(self):
         if self._history:
             u = self._history.pop()
             self.win.project.cfg["picks"][u].pop()
-            self.draw()
+            self.draw(keep_camera=True)
 
     def _clear_picks(self):
         if QtWidgets.QMessageBox.question(self, "GeoForm", "¿Borrar todos los contactos trazados?") \
