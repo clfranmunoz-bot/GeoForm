@@ -1,0 +1,28 @@
+name: build
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .[build]
+      - name: Tests
+        run: |
+          python -m tests.test_db_import
+          python -m geoform.verify
+          python -m geoform.estimation
+      - run: python -m PyInstaller geoform.spec --noconfirm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geoform-${{ matrix.os }}
+          path: dist/geoform

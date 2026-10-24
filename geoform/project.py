@@ -1,0 +1,166 @@
+"""Proyecto GeoForm (.geoform, JSON): rutas de datos + parámetros del modelo.
+
+Rutas relativas al archivo del proyecto. build() corre todo el pipeline:
+datos -> modelo geológico -> compósitos -> variograma -> block model -> reportes.
+"""
+import json
+import os
+
+import numpy as np
+
+from .app import DATA_DIR, load_assays, load_project
+
+DEFAULTS = {
+    "name": "Proyecto",
+    "collars": "collars.csv", "surveys": "surveys.csv", "intervals": "intervals.csv",
+    "assays": None, "topography": None, "satellite": None,
+    "stratigraphy": None,          # techo -> base; None = orden por profundidad media
+    "intrusions": [],
+    "faults": [],                  # [{name, point [x,y,elev], dip_direction, dip}]
+    "cell": 10.0,
+    "element": "Cu", "unit": "%",
+    "domain": None,                # litología donde se estima la ley
+    "composite": 10.0,
+    "block": [10.0, 10.0, 10.0],
+    "density": {},                 # {litología: t/m3}; default 2.6
+    "cutoffs": [0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5],
+    "colors": {},
+}
+FILE_KEYS = ("collars", "surveys", "intervals", "assays", "topography", "satellite")
+
+
+class Project:
+    def __init__(self, path=None, **cfg):
+        self.path = path
+        self.cfg = {**DEFAULTS, **cfg}
+        self.model = self.blocks = self.vario = None
+        self.comp = None
+        self.log = print
+
+    # -- E/S ------------------------------------------------------------------------
+    @classmethod
+    def open(cls, path):
+        with open(path, encoding="utf-8") as fh:
+            return cls(os.path.abspath(path), **json.load(fh))
+
+    def save(self, path=None):
+        new = os.path.abspath(path or self.path)
+        if self.path and os.path.dirname(new) != os.path.dirname(self.path):
+            for k in FILE_KEYS:
+                if self.cfg.get(k):  # rutas relativas -> absolutas al mover el proyecto
+                    self.cfg[k] = self.file(k)
+        self.path = new
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(self.cfg, fh, indent=2, ensure_ascii=False)
+        return self.path
+
+    def file(self, key):
+        p = self.cfg.get(key)
+        if not p:
+            return None
+        return p if os.path.isabs(p) else os.path.join(os.path.dirname(self.path or DATA_DIR + os.sep), p)
+
+    # -- pipeline -------------------------------------------------------------------
+    def load(self):
+        self.collars, self.surveys, self.intervals, units = load_project(
+            self.file("collars"), self.file("surveys"), self.file("intervals"))
+        intr = self.cfg["intrusions"]
+        self.strat = self.cfg["stratigraphy"] or [u for u in units if u not in intr]
+        self.units = self.strat + list(intr)
+        self.assays = load_assays(self.file("assays"), self.cfg["element"]) if self.file("assays") else None
+        self.dem = None
+        if self.file("topography"):
+            from .topography import load_dem
+            self.dem = load_dem(self.file("topography"))
+        return self
+
+    def build(self, estimate=True):
+        from .geomodel import GeoModel
+
+        self.log(f"Modelo geológico: {len(self.collars)} sondajes, unidades {', '.join(self.units)}")
+        self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
+                              self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"]).build()
+        self.blocks = self.vario = self.comp = None
+        if estimate and self.assays:
+            self.estimate()
+        return self
+
+    def estimate(self, method="kriging"):
+        from .estimation import Variogram, domain_block_model, domain_composites
+
+        dom = self.cfg["domain"]
+        xyz, vals, _ = domain_composites(self.collars, self.surveys, self.intervals, self.assays,
+                                         dom, self.cfg["composite"])
+        if len(vals) < 10:
+            self.log(f"Estimación omitida: solo {len(vals)} compósitos en {dom or 'todo'}")
+            return None
+        self.comp = (xyz, vals)
+        self.vario = Variogram(xyz, vals)
+        self.log(f"Variograma ({len(vals)} compósitos en {dom or 'todo'}): {self.vario}")
+        if dom:
+            self.blocks = domain_block_model(self.model, dom, xyz, vals, tuple(self.cfg["block"]), self.vario, method)
+        return self.blocks
+
+    # -- reportes -------------------------------------------------------------------
+    def density(self, unit):
+        return float(self.cfg["density"].get(unit, 2.6))
+
+    def volume_report(self):
+        """[(unidad, m3, t)]"""
+        return [(u, v, v * self.density(u)) for u, v in self.model.volumes().items()]
+
+    def grade_tonnage(self):
+        from .estimation import grade_tonnage
+
+        if self.blocks is None:
+            return []
+        bv = float(np.prod(self.cfg["block"]))
+        return grade_tonnage(self.blocks.cell_data["grade"], bv, self.density(self.cfg["domain"]), self.cfg["cutoffs"])
+
+    def report(self):
+        el, un = self.cfg["element"], self.cfg["unit"]
+        lines = ["VOLÚMENES Y TONELAJES POR UNIDAD", f"{'Unidad':<14}{'Volumen (m3)':>16}{'Tonelaje (t)':>16}"]
+        lines += [f"{u:<14}{v:>16,.0f}{t:>16,.0f}" for u, v, t in self.volume_report()]
+        gt = self.grade_tonnage()
+        if gt:
+            lines += ["", f"CURVA LEY-TONELAJE  dominio {self.cfg['domain']}  ({self.vario})",
+                      f"{'Corte ' + el + un:>12}{'Toneladas':>16}{'Ley media':>12}{'Metal (t)':>14}"]
+            lines += [f"{c:>12.2f}{t:>16,.0f}{g:>12.3f}{m:>14,.0f}" for c, t, g, m in gt]
+        return "\n".join(lines)
+
+
+def demo_project():
+    """Proyecto del yacimiento sintético (geoform/data); genera los datos si faltan."""
+    from . import synth
+
+    path = os.path.join(DATA_DIR, "demo.geoform")
+    if not os.path.exists(os.path.join(DATA_DIR, "collars.csv")):
+        synth.generate(DATA_DIR)
+    if os.path.exists(path):
+        return Project.open(path)
+    p = Project(path, name="Demo Pórfido Cu", assays="assays.csv", topography="terrain.asc",
+                satellite="satellite.png", stratigraphy=synth.STRAT, intrusions=[synth.INTRUSION],
+                faults=[synth.FAULT], domain=synth.INTRUSION, density={"Porfido": 2.7, "Cobertura": 2.0})
+    p.save()
+    return p
+
+
+def demo():
+    import tempfile
+
+    p = demo_project().load()
+    p.cfg["cell"] = 15.0
+    p.log = lambda *_: None
+    p.build()
+    vols = dict((u, v) for u, v, _ in p.volume_report())
+    assert all(v > 0 for v in vols.values()), vols
+    gt = p.grade_tonnage()
+    assert gt[0][1] >= gt[-1][1] and gt[-1][2] >= gt[0][2], gt  # corte sube -> menos t, más ley
+    with tempfile.TemporaryDirectory() as tmp:
+        q = Project.open(p.save(os.path.join(tmp, "x.geoform")))
+        assert json.dumps(q.cfg["faults"]) == json.dumps(p.cfg["faults"]) and os.path.exists(q.file("collars"))
+    print("project: OK\n" + p.report())
+
+
+if __name__ == "__main__":
+    demo()

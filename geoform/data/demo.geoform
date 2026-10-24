@@ -1,0 +1,57 @@
+{
+  "name": "Demo Pórfido Cu",
+  "collars": "collars.csv",
+  "surveys": "surveys.csv",
+  "intervals": "intervals.csv",
+  "assays": "assays.csv",
+  "topography": "terrain.asc",
+  "satellite": "satellite.png",
+  "stratigraphy": [
+    "Cobertura",
+    "Volcanico",
+    "Sedimentario",
+    "Basamento"
+  ],
+  "intrusions": [
+    "Porfido"
+  ],
+  "faults": [
+    {
+      "name": "Falla Principal",
+      "point": [
+        1330.0,
+        2280.0,
+        400.0
+      ],
+      "dip_direction": 120.0,
+      "dip": 70.0
+    }
+  ],
+  "cell": 10.0,
+  "element": "Cu",
+  "unit": "%",
+  "domain": "Porfido",
+  "composite": 10.0,
+  "block": [
+    10.0,
+    10.0,
+    10.0
+  ],
+  "density": {
+    "Porfido": 2.7,
+    "Cobertura": 2.0
+  },
+  "cutoffs": [
+    0.0,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.8,
+    1.0,
+    1.2,
+    1.5
+  ],
+  "colors": {}
+}

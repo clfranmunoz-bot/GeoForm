@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoform"
+version = "0.2.0"
+description = "Modelado geológico implícito 3D, estructural y estimación de recursos"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyvista",
+    "pyvistaqt",
+    "PySide6",
+    "matplotlib",
+    "pillow",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller"]
+
+[project.scripts]
+geoform = "geoform.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["geoform*"]
+
+[tool.setuptools.package-data]
+geoform = ["data/*", "assets/*"]
