@@ -26,6 +26,9 @@ SANS_LIST = ["Inter", "Segoe UI Variable Text", "SF Pro Text", "Helvetica Neue",
 SCENE_BG = ("#0d1117", "#243142")  # abajo, arriba
 SCENE_TEXT = "#c9d4e0"
 SCENE_GRID = "#7d8da1"
+# escena clara estilo Leapfrog (por defecto); la oscura queda como alternativa
+SCENE_LIGHT = {"bg": ("#d9dee5", "#ffffff"), "text": "#1f2937", "grid": "#4b5563"}
+SCENE_DARK = {"bg": SCENE_BG, "text": SCENE_TEXT, "grid": SCENE_GRID}
 
 CHECK = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "assets", "check.svg").replace("\\", "/")
 
@@ -61,7 +64,8 @@ ICONS = {
 GROUP_ICON = {"Sondajes": "drill", "Topografía": "topo", "Modelos geológicos": "iso",
               "Estructural": "fault", "Compósitos": "target", "Modelos de bloques": "blocks",
               "Estimación": "vario", "Reportes": "report",
-              "Superficies": "section", "Volúmenes del usuario": "layers"}
+              "Cronología de superficies": "section", "Volúmenes de salida": "layers",
+              "Sistema de fallas": "fault"}
 
 
 def icon(name, color=TEXT2, size=20):

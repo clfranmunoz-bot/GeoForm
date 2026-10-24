@@ -207,11 +207,11 @@ class GeoModel:
         """Sólido cerrado de una unidad o de un volumen del usuario (isosuperficie 0, bordes tapados)."""
         g = self.grid.copy()
         s = (self.solids[unit] if unit in self.solids else self.custom[unit]).reshape(g.dimensions, order="F").copy()
-        s[[0, -1], :, :] = s[:, [0, -1], :] = -1.0  # tapa laterales -> sólido cerrado
-        s[:, :, [0, -1]] = -1.0
+        s[[0, -1], :, :] = s[:, [0, -1], :] = -1e-3  # tapa casi en el borde: caras laterales planas, sin huecos
+        s[:, :, [0, -1]] = -1e-3
         g.point_data["s"] = s.ravel(order="F")
         m = g.contour([0.0], scalars="s")
-        return m.smooth_taubin(n_iter=20) if m.n_points else m
+        return m.smooth_taubin(n_iter=20, feature_smoothing=False, boundary_smoothing=False, feature_angle=50) if m.n_points else m
 
     def fault_mesh(self, i):
         """Superficie de falla recortada al subsuelo y al dominio."""

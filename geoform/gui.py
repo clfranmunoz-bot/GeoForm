@@ -186,6 +186,7 @@ class MainWindow(QtWidgets.QMainWindow):
         btn("Parámetros", "params", self.edit_parameters, "Estratigrafía, fallas, dominio y grillas")
         btn("Exportar", "export", self.export, "DXF / OBJ / block model CSV / reporte")
         btn("Captura", "camera", self.screenshot, "Guardar la vista 3D como PNG")
+        btn("Fondo", "iso", self._toggle_bg, "Alternar escena clara / oscura")
         QtGui.QShortcut(QtGui.QKeySequence.Open, self, self.open_project)
         QtGui.QShortcut(QtGui.QKeySequence.Save, self, self.save_project)
         QtGui.QShortcut(QtGui.QKeySequence("F5"), self, self.rebuild)
@@ -314,7 +315,7 @@ class MainWindow(QtWidgets.QMainWindow):
             it.setCheckState(0, QtCore.Qt.Checked if key in self.visible else QtCore.Qt.Unchecked)
             if key.startswith("solid:"):
                 it.setIcon(0, self._swatch(scene.unit_color(p, key[6:])))
-            elif key.startswith("surface:"):
+            elif key.startswith(("surface:", "points:")):
                 it.setIcon(0, self._swatch(scene.unit_color(p, key.split(" ", 1)[1])))
             group(g).addChild(it)
         if p.vario is not None:
@@ -470,7 +471,7 @@ class MainWindow(QtWidgets.QMainWindow):
         menu = QtWidgets.QMenu(self)
         menu.addAction("Ver solo esto", lambda: self._solo(key))
         menu.addAction("Propiedades", lambda: self._show_props(key))
-        if key.startswith(("solid:", "fault:", "topo")):
+        if key.startswith(("solid:", "fault:", "topo", "surface:", "volume:")):
             menu.addAction("Exportar malla...", lambda: self._export_mesh(key))
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
@@ -485,6 +486,12 @@ class MainWindow(QtWidgets.QMainWindow):
         scene.set_view(self.plotter, self.project, *v)
         self.plotter.render()
         self._update_cam_label()
+
+    def _toggle_bg(self):
+        scene.LIGHT = not scene.LIGHT
+        self.base_kw.clear()  # las leyendas guardan el color de texto
+        if self.layer_defs:
+            self.render_all()
 
     def _set_zscale(self, z):
         self.zlabel.setText(f"Z ×{z:.1f}")

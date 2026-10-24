@@ -13,12 +13,17 @@ GRADE_CMAP = "turbo"
 DEFAULT_ON = ("solid:", "fault:", "holes:grade")  # capas visibles al abrir / render por defecto
 SOLID = dict(smooth_shading=True, ambient=0.16, diffuse=0.88, specular=0.35, specular_power=28)
 _ZFLIP = np.diag([1.0, 1.0, -1.0, 1.0])
+LIGHT = True  # fondo claro (Leapfrog); la GUI lo alterna
+
+
+def colors():
+    return theme.SCENE_LIGHT if LIGHT else theme.SCENE_DARK
 
 
 def sbar(title):
     """Leyenda de color sobria, a la derecha, en la paleta del tema."""
     return {"title": title + "\n", "vertical": True, "position_x": 0.91, "position_y": 0.22, "width": 0.028,
-            "height": 0.56, "n_labels": 6, "fmt": "%.2f", "color": theme.SCENE_TEXT, "font_family": "arial",
+            "height": 0.56, "n_labels": 6, "fmt": "%.2f", "color": colors()["text"], "font_family": "arial",
             "title_font_size": 15, "label_font_size": 12, "shadow": False, "bold": False}
 
 
@@ -78,6 +83,20 @@ def holes_mesh(project, mode="lith", radius=2.5):
     return flip(poly).tube(radius=radius, n_sides=10, capping=False)
 
 
+def contact_points(project, unit):
+    """Puntos de contacto (sondajes + trazos a mano) del techo de `unit`, en elevación."""
+    import pyvista as pv
+
+    from .geomodel import hole_samples
+
+    below = set(project.strat[project.strat.index(unit):])
+    pts, vals = hole_samples(project.collars, project.surveys, project.intervals,
+                             lambda l: l in below, lambda l: l in project.strat)
+    q = np.vstack([pts[vals == 0] * [1, 1, -1],
+                   np.asarray(project.cfg["picks"].get(unit, []), float).reshape(-1, 3)])
+    return pv.PolyData(q)
+
+
 # -- capas ------------------------------------------------------------------------------
 def layers(project):
     """[(key, grupo, etiqueta, builder)] según lo que haya en el proyecto."""
@@ -122,18 +141,21 @@ def layers(project):
     m = project.model
     if m is not None:
         for u in project.units:
-            out.append((f"solid:{u}", "Modelos geológicos", u, lambda u=u: dict(
+            out.append((f"solid:{u}", "Volúmenes de salida", u, lambda u=u: dict(
                 mesh=flip(m.solid_mesh(u)), color=unit_color(project, u), **SOLID)))
         for n in m.surfaces:
             if n != "Topografía":
-                out.append((f"surface:{n}", "Superficies", n, lambda n=n: dict(
-                    mesh=flip(m.surface_mesh(n)), color=unit_color(project, n.split(" ", 1)[1]),
-                    opacity=0.8, show_edges=True, edge_color="#0d1117", line_width=0.3, **SOLID)))
+                u = n.split(" ", 1)[1]
+                out.append((f"surface:{n}", "Cronología de superficies", n, lambda n=n, u=u: dict(
+                    mesh=flip(m.surface_mesh(n)), color=unit_color(project, u), opacity=0.6, **SOLID)))
+                out.append((f"points:{n}", "Cronología de superficies", f"Contactos {u}", lambda u=u: dict(
+                    mesh=contact_points(project, u), color=unit_color(project, u), point_size=6,
+                    render_points_as_spheres=True)))
         for v in m.custom:
-            out.append((f"volume:{v}", "Volúmenes del usuario", v, lambda v=v: dict(
+            out.append((f"volume:{v}", "Volúmenes de salida", v, lambda v=v: dict(
                 mesh=flip(m.solid_mesh(v)), color=unit_color(project, v), **SOLID)))
         for i, f in enumerate(project.cfg["faults"]):
-            out.append((f"fault:{i}", "Estructural", f["name"], lambda i=i: dict(
+            out.append((f"fault:{i}", "Sistema de fallas", f["name"], lambda i=i: dict(
                 mesh=flip(m.fault_mesh(i)), color="#f43f5e", opacity=0.55, smooth_shading=True)))
 
     if project.comp is not None:
@@ -188,13 +210,14 @@ def set_view(plotter, project, azimuth=225.0, elevation=30.0, zoom=1.0):
 
 
 def decorate(plotter, project, zscale=1.0):
-    plotter.set_background(theme.SCENE_BG[0], top=theme.SCENE_BG[1])
+    c = colors()
+    plotter.set_background(c["bg"][0], top=c["bg"][1])
     b = list(plotter.bounds)
     b[4], b[5] = b[4] / zscale, b[5] / zscale  # etiquetas en cotas reales con exageración vertical
-    plotter.show_grid(xtitle="East (X)", ytitle="North (Y)", ztitle="Elev (Z)", color=theme.SCENE_GRID,
+    plotter.show_grid(xtitle="East (X)", ytitle="North (Y)", ztitle="Elev (Z)", color=c["grid"],
                       font_family="arial", font_size=10, fmt="%.0f", n_xlabels=5, n_ylabels=5, n_zlabels=4,
                       axes_ranges=b)
-    plotter.add_axes(color=theme.SCENE_TEXT, line_width=2)
+    plotter.add_axes(color=c["text"], line_width=2)
     plotter.enable_anti_aliasing("ssaa")
 
 
