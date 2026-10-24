@@ -121,6 +121,39 @@ class Project:
         bv = float(np.prod(self.cfg["block"]))
         return grade_tonnage(self.blocks.cell_data["grade"], bv, self.density(self.cfg["domain"]), self.cfg["cutoffs"])
 
+    def classification(self, cutoff=0.0):
+        """[(categoría, t, ley, metal)] sobre la ley de corte (metal en t; ley en % -> /100)."""
+        from .estimation import CLASSES
+
+        if self.blocks is None:
+            return []
+        g, c = self.blocks.cell_data["grade"], self.blocks.cell_data["class"]
+        bt = float(np.prod(self.cfg["block"])) * self.density(self.cfg["domain"])
+        k = 0.01 if self.cfg["unit"] == "%" else 1.0
+        out = []
+        for i, name in enumerate(CLASSES, 1):
+            m = (c == i) & (g >= cutoff)
+            out.append((name, m.sum() * bt, float(g[m].mean()) if m.any() else 0.0, float(g[m].sum()) * bt * k))
+        return out
+
+    def validation(self):
+        """Acierto del modelo en los sondajes: fracción de metros cuya unidad modelada coincide con
+        la registrada -> (total, {unidad: fracción})."""
+        from .model import _point_at_depth, hole_path
+
+        hit, tot = {}, {}
+        for hid, ints in self.intervals.items():
+            x, y, z, az, dip = self.collars[hid]
+            mds, path = hole_path(x, y, z, az, dip, self.surveys.get(hid, []))
+            for f, t, lith in ints:
+                if lith not in self.units or t <= f:
+                    continue
+                d = np.arange(f + 1.0, t, 2.0) if t - f > 2 else np.array([(f + t) / 2])
+                lab = self.model.label_at(np.array([_point_at_depth(mds, path, v) for v in d]))
+                hit[lith] = hit.get(lith, 0.0) + float((lab == self.units.index(lith)).mean()) * (t - f)
+                tot[lith] = tot.get(lith, 0.0) + (t - f)
+        return sum(hit.values()) / max(sum(tot.values()), 1e-9), {u: hit[u] / tot[u] for u in tot}
+
     def report(self):
         el, un = self.cfg["element"], self.cfg["unit"]
         lines = ["VOLÚMENES Y TONELAJES POR UNIDAD", f"{'Unidad':<14}{'Volumen (m3)':>16}{'Tonelaje (t)':>16}"]
@@ -130,6 +163,11 @@ class Project:
             lines += ["", f"CURVA LEY-TONELAJE  dominio {self.cfg['domain']}  ({self.vario})",
                       f"{'Corte ' + el + un:>12}{'Toneladas':>16}{'Ley media':>12}{'Metal (t)':>14}"]
             lines += [f"{c:>12.2f}{t:>16,.0f}{g:>12.3f}{m:>14,.0f}" for c, t, g, m in gt]
+            lines += ["", "CLASIFICACIÓN (corte 0)", f"{'Categoría':<12}{'Toneladas':>16}{'Ley media':>12}{'Metal (t)':>14}"]
+            lines += [f"{n:<12}{t:>16,.0f}{g:>12.3f}{m:>14,.0f}" for n, t, g, m in self.classification()]
+        tot, per = self.validation()
+        lines += ["", f"VALIDACIÓN EN SONDAJES: {tot:.1%} de los metros coinciden con el modelo"]
+        lines += [f"  {u:<14}{v:>8.1%}" for u, v in per.items()]
         return "\n".join(lines)
 
 
@@ -160,6 +198,9 @@ def demo():
     assert all(v > 0 for v in vols.values()), vols
     gt = p.grade_tonnage()
     assert gt[0][1] >= gt[-1][1] and gt[-1][2] >= gt[0][2], gt  # corte sube -> menos t, más ley
+    cls = p.classification()
+    assert abs(sum(t for _, t, _, _ in cls) - gt[0][1]) / gt[0][1] < 0.01, (cls, gt[0])  # categorías suman el total
+    assert p.validation()[0] > 0.9, p.validation()
     with tempfile.TemporaryDirectory() as tmp:
         q = Project.open(p.save(os.path.join(tmp, "x.geoform")))
         assert json.dumps(q.cfg["faults"]) == json.dumps(p.cfg["faults"]) and os.path.exists(q.file("collars"))

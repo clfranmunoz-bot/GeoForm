@@ -473,7 +473,15 @@ class MainWindow(QtWidgets.QMainWindow):
         menu.addAction("Propiedades", lambda: self._show_props(key))
         if key.startswith(("solid:", "fault:", "topo", "surface:", "volume:")):
             menu.addAction("Exportar malla...", lambda: self._export_mesh(key))
+        if key.startswith("volume:"):
+            menu.addAction("Eliminar volumen", lambda: self._delete_volume(key[7:]))
         menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _delete_volume(self, name):
+        if QtWidgets.QMessageBox.question(self, "GeoForm", f"¿Eliminar el volumen «{name}»?") != QtWidgets.QMessageBox.Yes:
+            return
+        self.project.cfg["volumes"] = [v for v in self.project.cfg["volumes"] if v["name"] != name]
+        self.rebuild()
 
     def _solo(self, key):
         self.visible = {key}
@@ -594,6 +602,9 @@ class MainWindow(QtWidgets.QMainWindow):
         kpis.addWidget(card("Sondajes", f"{len(p.collars)}",
                             f"{sum(len(v) for v in p.intervals.values()):,} intervalos litológicos"))
         kpis.addWidget(card("Volumen modelado", f"{sum(v for _, v, _ in rep) / 1e6:,.0f} Mm³", f"{len(p.units)} unidades"))
+        val, _per = p.validation()
+        kpis.addWidget(card("Validación", f"{val:.1%}", "metros de sondaje que coinciden con el modelo",
+                            theme.ACCENT if val >= 0.9 else theme.AMBER))
         if gt:
             row = gt[min(3, len(gt) - 1)]
             el, un = p.cfg["element"], p.cfg["unit"]
@@ -633,15 +644,24 @@ class MainWindow(QtWidgets.QMainWindow):
             ax3.yaxis.label.set_color(theme.SERIES[2])
         lay.addWidget(canvas)
 
-        tables = QtWidgets.QHBoxLayout()
+        tables, cells = QtWidgets.QGridLayout(), []  # 2x2: cuatro tablas en fila quedaban truncadas
+        def add(w, *_):
+            tables.addWidget(w, len(cells) // 2, len(cells) % 2, QtCore.Qt.AlignTop)
+            cells.append(w)
         tables.setSpacing(12)
-        tables.addWidget(self._table("Unidades", ["Unidad", "Mm³", "t/m³", "Mt"],
+        add(self._table("Unidades", ["Unidad", "Mm³", "t/m³", "Mt"],
                                      [(u, f"{v / 1e6:,.2f}", f"{p.density(u):.2f}", f"{t / 1e6:,.1f}") for u, v, t in rep],
                                      {u: scene.unit_color(p, u) for u, _, _ in rep}), 0, QtCore.Qt.AlignTop)
         if gt:
-            tables.addWidget(self._table("Ley-tonelaje", ["Corte", "Mt", f"Ley {p.cfg['unit']}", f"{p.cfg['element']} kt"],
+            add(self._table("Ley-tonelaje", ["Corte", "Mt", f"Ley {p.cfg['unit']}", f"{p.cfg['element']} kt"],
                                          [(f"{c_:.2f}", f"{t_ / 1e6:,.2f}", f"{g_:.3f}", f"{m_ / 1e3:,.1f}") for c_, t_, g_, m_ in gt]),
                              0, QtCore.Qt.AlignTop)
+            add(self._table("Clasificación (corte 0)", ["Categoría", "Mt", f"Ley {p.cfg['unit']}", f"{p.cfg['element']} kt"],
+                                         [(n, f"{t_ / 1e6:,.2f}", f"{g_:.3f}", f"{m_ / 1e3:,.1f}") for n, t_, g_, m_ in p.classification()],
+                                         {"Medido": "#22c55e", "Indicado": "#f59e0b", "Inferido": "#ef4444"}), 0, QtCore.Qt.AlignTop)
+        add(self._table("Validación por unidad", ["Unidad", "Acierto"],
+                                     [(u, f"{v:.1%}") for u, v in _per.items()],
+                                     {u: scene.unit_color(p, u) for u in _per}), 0, QtCore.Qt.AlignTop)
         lay.addLayout(tables)
         lay.addStretch()
         self.report_tab.setWidget(page)

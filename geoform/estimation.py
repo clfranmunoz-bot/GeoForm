@@ -121,7 +121,27 @@ def domain_block_model(model, domain, xyz, vals, block=(10.0, 10.0, 10.0), vario
         grade[mask] = idw(xyz, vals, centers[mask], n_neighbors=12)
     vox.cell_data["grade"] = grade
     vox.cell_data["domain"] = mask.astype(np.uint8)
+    vox.cell_data["class"] = classify(xyz, centers, mask, vario)
     return vox
+
+
+CLASSES = ("Medido", "Indicado", "Inferido")
+
+
+def classify(xyz, centers, mask, vario, n=3):
+    """Categoría por cercanía de datos: distancia al n-ésimo compósito más cercano vs. alcance
+    del variograma (<= 1/3 Medido, <= 2/3 Indicado, resto Inferido). 0 = fuera del dominio.
+    shortcut: criterio geométrico simple (no varianza de kriging ni nº de sondajes), suficiente
+    para un primer reporte; para un reporte JORC/NI 43-101 usar los criterios del QP."""
+    from scipy.spatial import cKDTree
+
+    r = vario.range_h if vario is not None and vario.range_h else 100.0
+    out = np.zeros(len(centers), np.uint8)
+    if mask.any():
+        d = cKDTree(xyz).query(centers[mask], k=min(n, len(xyz)))[0]
+        d = d[:, -1] if d.ndim > 1 else d
+        out[mask] = np.where(d <= r / 3, 1, np.where(d <= 2 * r / 3, 2, 3))
+    return out
 
 
 def grade_tonnage(grades, block_volume, density, cutoffs):

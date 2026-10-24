@@ -11,7 +11,7 @@ from . import theme
 PALETTE = ["#e9c46a", "#9b6dd6", "#4ea8de", "#e07a3f", "#ef4444", "#4ade80", "#2dd4bf", "#f472b6"]
 GRADE_CMAP = "turbo"
 DEFAULT_ON = ("solid:", "fault:", "holes:grade")  # capas visibles al abrir / render por defecto
-SOLID = dict(smooth_shading=True, ambient=0.16, diffuse=0.88, specular=0.35, specular_power=28)
+SOLID = dict(smooth_shading=True, split_sharp_edges=True, feature_angle=35, ambient=0.16, diffuse=0.88, specular=0.35, specular_power=28)
 _ZFLIP = np.diag([1.0, 1.0, -1.0, 1.0])
 LIGHT = True  # fondo claro (Leapfrog); la GUI lo alterna
 
@@ -172,6 +172,13 @@ def layers(project):
             b = project.blocks.threshold(0.5, scalars="domain")
             return dict(mesh=flip(b), scalars="grade", cmap=GRADE_CMAP, clim=grade_clim(project),
                         show_edges=True, edge_color="#0d1117", line_width=0.4, show_scalar_bar=False)
+        def classes():
+            from matplotlib.colors import ListedColormap
+            b = project.blocks.threshold(0.5, scalars="domain")
+            return dict(mesh=flip(b), scalars="class", cmap=ListedColormap(["#22c55e", "#f59e0b", "#ef4444"]),
+                        clim=(0.5, 3.5), show_edges=True, edge_color="#0d1117", line_width=0.4,
+                        scalar_bar_args={**sbar("1 Medido · 2 Indicado · 3 Inferido"), "n_labels": 3, "fmt": "%.0f"})
+        out.append(("blocks:class", "Modelos de bloques", "Clasificación de recursos", classes))
         out.append(("blocks", "Modelos de bloques", f"Kriging {project.cfg['element']} en {project.cfg['domain']}", blocks))
     return out
 
