@@ -109,9 +109,15 @@ class MainWindow(QtWidgets.QMainWindow):
         from .section2d import SectionView
         self.section = SectionView(self)
         self.tabs.addTab(self.section, theme.icon("section"), "Perfil 2D")
+        from .correlation import CorrelationView
+        from .stats_view import StatsView
+        self.correlation = CorrelationView(self)
+        self.tabs.addTab(self.correlation, theme.icon("drill"), "Correlación")
         self.vario_tab = QtWidgets.QWidget()
         QtWidgets.QVBoxLayout(self.vario_tab).setContentsMargins(20, 16, 20, 16)
         self.tabs.addTab(self.vario_tab, theme.icon("vario"), "Variograma")
+        self.stats = StatsView(self)
+        self.tabs.addTab(self.stats, theme.icon("report"), "Estadística")
         self.report_tab = QtWidgets.QScrollArea(widgetResizable=True, frameShape=QtWidgets.QFrame.NoFrame)
         self.tabs.addTab(self.report_tab, theme.icon("report"), "Recursos")
         self.setCentralWidget(self.tabs)
@@ -288,6 +294,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.render_all()
         scene.set_view(self.plotter, p)
         self.section.refresh()
+        self.correlation.refresh()
+        self.stats.refresh()
         self._fill_variogram()
         self._fill_report()
 

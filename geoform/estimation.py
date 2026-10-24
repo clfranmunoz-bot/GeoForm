@@ -144,6 +144,52 @@ def classify(xyz, centers, mask, vario, n=3):
     return out
 
 
+def grade_shell(model, xyz, vals, cutoff):
+    """Envolvente de ley (modelo numérico estilo Leapfrog): RBF lineal de todos los compósitos,
+    isosuperficie `cutoff`, recortada al subsuelo. -> pv.PolyData (coords. motor)."""
+    import pyvista as pv
+    from scipy.interpolate import RBFInterpolator
+
+    lo, hi = np.array(model.grid.bounds).reshape(3, 2).T
+    step = 2 * model.cell  # grilla gruesa: el RBF global es caro y la envolvente es suave
+    g = pv.ImageData(dimensions=np.ceil((hi - lo) / step).astype(int) + 1, spacing=[step] * 3, origin=lo)
+    P = np.asarray(g.points)
+    f = RBFInterpolator(xyz, vals, kernel="linear", smoothing=len(vals) * 0.01, neighbors=64)
+    g.point_data["g"] = f(P)
+    g.point_data["topo"] = model.topo(P)
+    m = g.contour([cutoff], scalars="g")
+    if m.n_points:
+        m = m.clip_scalar(scalars="topo", value=0.0, invert=False)
+    return m.smooth_taubin(n_iter=20) if m.n_points else m
+
+
+def stats(vals):
+    """Estadística descriptiva de compósitos."""
+    v = np.asarray(vals, float)
+    return {"n": len(v), "media": v.mean(), "desv": v.std(), "CV": v.std() / v.mean() if v.mean() else 0.0,
+            "mín": v.min(), "P50": np.percentile(v, 50), "P95": np.percentile(v, 95),
+            "P99": np.percentile(v, 99), "máx": v.max()}
+
+
+def swath(xyz, vals, blocks, axis, width):
+    """Swath plot: media de compósitos vs. media de bloques por franjas de `width` m a lo largo de
+    `axis` (0 X, 1 Y, 2 Z elevación). -> (centros, media compósitos, media bloques, n compósitos)."""
+    c = np.asarray(blocks.cell_centers().points)
+    gb = blocks.cell_data["grade"]
+    ok = np.isfinite(gb)
+    sgn = -1 if axis == 2 else 1  # z motor = -elev
+    a, b = sgn * xyz[:, axis], sgn * c[ok, axis]
+    edges = np.arange(np.floor(min(a.min(), b.min()) / width) * width, max(a.max(), b.max()) + width, width)
+    ia, ib = np.digitize(a, edges), np.digitize(b, edges)
+    rows = []
+    for i in range(1, len(edges)):
+        ma, mb = ia == i, ib == i
+        if ma.any() or mb.any():
+            rows.append((edges[i - 1] + width / 2, vals[ma].mean() if ma.any() else np.nan,
+                         gb[ok][mb].mean() if mb.any() else np.nan, int(ma.sum())))
+    return tuple(np.array(r) for r in zip(*rows))
+
+
 def grade_tonnage(grades, block_volume, density, cutoffs):
     """Tabla [(ley de corte, toneladas, ley media, metal t)] sobre bloques estimados."""
     g = np.asarray(grades, float)

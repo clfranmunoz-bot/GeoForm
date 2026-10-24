@@ -167,6 +167,13 @@ def layers(project):
             return dict(mesh=pc, scalars="grade", cmap=GRADE_CMAP, clim=grade_clim(project),
                         point_size=7, render_points_as_spheres=True, show_scalar_bar=False)
         out.append(("composites", "Compósitos", f"Compósitos {project.cfg['domain']}", comps))
+    if getattr(project, "all_comp", None) is not None and m is not None:
+        from .estimation import grade_shell
+        shell_cols = ["#facc15", "#f97316", "#dc2626", "#7c3aed"]
+        for i, c in enumerate(project.cfg["shells"]):
+            out.append((f"shell:{c}", "Modelos numéricos", f"Envolvente {project.cfg['element']} ≥ {c:g}",
+                        lambda c=c, i=i: dict(mesh=flip(grade_shell(m, *project.all_comp, c)),
+                                              color=shell_cols[i % 4], opacity=0.45 + 0.15 * i, **SOLID)))
     if project.blocks is not None:
         def blocks():
             b = project.blocks.threshold(0.5, scalars="domain")

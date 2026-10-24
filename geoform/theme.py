@@ -65,7 +65,7 @@ GROUP_ICON = {"Sondajes": "drill", "Topografía": "topo", "Modelos geológicos":
               "Estructural": "fault", "Compósitos": "target", "Modelos de bloques": "blocks",
               "Estimación": "vario", "Reportes": "report",
               "Cronología de superficies": "section", "Volúmenes de salida": "layers",
-              "Sistema de fallas": "fault"}
+              "Sistema de fallas": "fault", "Modelos numéricos": "target"}
 
 
 def icon(name, color=TEXT2, size=20):

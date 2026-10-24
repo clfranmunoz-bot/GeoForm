@@ -27,6 +27,8 @@ DEFAULTS = {
     "colors": {},
     "picks": {},                   # {unidad: [[x,y,elev]]} contactos trazados en el perfil 2D
     "volumes": [],                 # [{name, top, bottom}] volúmenes entre superficies
+    "topcut": None,                # ley máxima de compósitos (capping); None = sin recorte
+    "shells": [0.5, 1.0],          # leyes de corte de las envolventes de ley (modelo numérico)
 }
 FILE_KEYS = ("collars", "surveys", "intervals", "assays", "topography", "satellite")
 
@@ -36,7 +38,7 @@ class Project:
         self.path = path
         self.cfg = {**DEFAULTS, **cfg}
         self.model = self.blocks = self.vario = None
-        self.comp = None
+        self.comp = self.all_comp = None
         self.log = print
 
     # -- E/S ------------------------------------------------------------------------
@@ -83,7 +85,7 @@ class Project:
         self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
                               self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"],
                               self.cfg["picks"], self.cfg["volumes"]).build()
-        self.blocks = self.vario = self.comp = None
+        self.blocks = self.vario = self.comp = self.all_comp = None
         if estimate and self.assays:
             self.estimate()
         return self
@@ -97,7 +99,14 @@ class Project:
         if len(vals) < 10:
             self.log(f"Estimación omitida: solo {len(vals)} compósitos en {dom or 'todo'}")
             return None
+        self.comp_raw = vals
+        if self.cfg["topcut"]:
+            n = int((vals > self.cfg["topcut"]).sum())
+            vals = np.minimum(vals, self.cfg["topcut"])
+            self.log(f"Top-cut {self.cfg['topcut']}: {n} compósitos recortados")
         self.comp = (xyz, vals)
+        self.all_comp = domain_composites(self.collars, self.surveys, self.intervals, self.assays,
+                                          None, self.cfg["composite"])[:2]
         self.vario = Variogram(xyz, vals)
         self.log(f"Variograma ({len(vals)} compósitos en {dom or 'todo'}): {self.vario}")
         if dom:
