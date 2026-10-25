@@ -150,7 +150,7 @@ class SectionView(QtWidgets.QWidget):
         g = scene.flip(m.grid)
         for u, face in scene.section_faces(p, normal, origin):
             pl.add_mesh(face, color=scene.unit_color(p, u), lighting=False, name=f"f:{u}")
-            g.point_data["s"] = m.solids[u]
+            g.point_data["s"] = m.partition()[u]
             edge = g.slice(normal=normal, origin=origin).contour([0.0], scalars="s")
             if edge.n_points:
                 pl.add_mesh(edge.translate(off * 0.5, inplace=False), color="#0b1636", line_width=1.2, opacity=0.7)

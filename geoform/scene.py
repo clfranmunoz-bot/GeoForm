@@ -208,7 +208,7 @@ def section_faces(project, normal, origin):
     g = flip(m.grid)
     out = []
     for u in project.units:
-        g.point_data["s"] = m.solids[u]
+        g.point_data["s"] = m.partition()[u]
         sl = g.slice(normal=normal, origin=origin)
         if sl.n_points:
             sl = sl.clip_scalar(scalars="s", value=0.0, invert=False)

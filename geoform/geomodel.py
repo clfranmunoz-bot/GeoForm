@@ -280,6 +280,7 @@ class GeoModel:
             solids[u] = np.minimum(body, t)
 
         self.grid, self.topo, self.solids, self.raw = grid, T, solids, raw
+        self._part = None
         self.block_signs = [s for s, _ in blocks]
         self.fault_values = [plane_field(f)(P) for f in self.faults]
         stack = np.stack([solids[u] for u in self.units])
@@ -296,6 +297,18 @@ class GeoModel:
         for u in self.vein_info:  # una veta delgada se mide mejor en su propia malla cerrada
             out[u] = float(self.vein_mesh(u).volume)
         return out
+
+    def partition(self):
+        """{unidad: s_u - max(s_otras)} recortado al subsuelo. Su cero es la frontera con la unidad
+        vecina dominante, compartida por ambas: los cortes quedan sin huecos entre unidades
+        (con los campos crudos queda un vacío donde ninguna unidad es > 0)."""
+        if getattr(self, "_part", None) is None:
+            S = np.stack([self.solids[u] for u in self.units])
+            top2 = np.partition(S, -2, axis=0)[-2:] if len(S) > 1 else np.vstack([S - 1, S])
+            t = self.surfaces["Topografía"]
+            self._part = {u: np.minimum(S[k] - np.where(S[k] >= top2[1], top2[0], top2[1]), t)
+                          for k, u in enumerate(self.units)}
+        return self._part
 
     def custom_volume(self, name):
         return float((self.custom[name] > 0).sum()) * float(np.prod(self.spacing))
