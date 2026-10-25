@@ -4,6 +4,15 @@ Modelamiento geológico implícito, estructural y estimación de recursos a part
 
 ![modelo](docs/img/1_modelo_geologico.png)
 
+## Capturas
+| | |
+|---|---|
+| ![Escena 3D](docs/img/gui_1_escena_3d.png) **Escena 3D** · sólidos, sondajes por ley y capas con estilo de render | ![Perfil 2D](docs/img/gui_2_perfil_2d.png) **Perfil 2D** · corte ortogonal, trazado de contactos y exageración vertical |
+| ![Correlación](docs/img/gui_3_correlacion.png) **Correlación** · columnas litológicas y leyes de varios sondajes | ![Variograma](docs/img/gui_4_variograma.png) **Variograma** · experimental y modelo con anisotropía |
+| ![Estadística](docs/img/gui_5_estadistica.png) **Estadística** · histograma, validación cruzada, estereograma y swath plots | ![Recursos](docs/img/gui_6_recursos.png) **Recursos** · KPI, tonelaje por unidad, ley-tonelaje y pit óptimo |
+| ![Corte](docs/img/2_corte_falla_porfido.png) **Corte** · falla con escalón y pórfido | ![Kriging](docs/img/5_leyes_kriging.png) **Kriging** · block model restringido al dominio |
+| ![Satélite](docs/img/3_topografia_satelite.png) **Topografía** · ortofoto y curvas de nivel | ![Elevación](docs/img/4_topografia_elevacion.png) **Elevación** · DEM con exageración vertical |
+
 ## Qué hace
 - **Datos**: collars, surveys, litología y leyes (CSV), DEM `.asc` y ortofoto. Los importadores
   validan columnas, números e intervalos e indican el archivo y la fila con error.
@@ -38,7 +47,8 @@ python -m venv .venv
 .venv\Scripts\python -m geoform collars.csv surveys.csv intervals.csv --assays assays.csv --topo dem.asc
 .venv\Scripts\python -m geoform --report            # volúmenes + ley-tonelaje en consola
 .venv\Scripts\python -m geoform --screenshot out.png --section
-.venv\Scripts\python docs\gallery.py                # regenera docs/img/
+.venv\Scripts\python docs\gallery.py                # regenera las capturas 3D de docs/img/
+.venv\Scripts\python docs\gallery_gui.py            # regenera las capturas de la GUI (abre la ventana)
 ```
 Convención de los CSV: la `z` del collar es la **elevación**, el `dip` es negativo hacia abajo y el
 azimut se mide desde el norte.
@@ -69,3 +79,12 @@ python -m geoform --smoke-gui
 El resultado queda en `dist/geoform/geoform.exe`. El `.spec` agrega los DLL de conda
 (`C:/ProgramData/spyder-6/Library/bin`) cuando existen. **No construyas dentro de OneDrive**: el
 sincronizador bloquea `dist/` y puede romper la carpeta.
+
+## Contribuir
+```bash
+git clone https://github.com/clfranmunoz-bot/GeoForm.git
+cd GeoForm
+python -m venv .venv
+.venv\Scripts\python -m pip install -e .[build]
+```
+Haz un fork, crea una rama, corre los tests de arriba y abre un pull request.

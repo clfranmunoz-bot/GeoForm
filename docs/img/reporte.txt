@@ -1,20 +1,38 @@
 VOLÚMENES Y TONELAJES POR UNIDAD
 Unidad            Volumen (m3)    Tonelaje (t)
 Cobertura            5,902,500      11,805,000
-Volcanico           43,877,000     114,080,200
-Sedimentario        33,717,000      87,664,200
-Basamento           62,604,500     162,771,700
-Porfido             15,425,500      41,648,850
+Volcanico           43,708,500     113,642,100
+Sedimentario        33,646,500      87,480,900
+Basamento           62,670,000     162,942,000
+Porfido             15,268,500      41,224,950
+Veta                   311,558         903,518
 
 CURVA LEY-TONELAJE  dominio Porfido  (esférico: nugget=0.0311 sill=0.1652 alcance H=128 m V=113 m)
    Corte Cu%       Toneladas   Ley media     Metal (t)
-        0.00      41,631,300       1.231       512,498
-        0.20      41,631,300       1.231       512,498
-        0.30      41,631,300       1.231       512,498
-        0.40      41,631,300       1.231       512,498
-        0.50      41,631,300       1.231       512,498
-        0.60      41,369,400       1.235       510,977
-        0.80      37,689,300       1.286       484,873
-        1.00      32,337,900       1.348       435,872
-        1.20      22,434,300       1.455       326,387
-        1.50       7,762,500       1.669       129,525
+        0.00      41,188,500       1.234       508,066
+        0.20      41,188,500       1.234       508,066
+        0.30      41,188,500       1.234       508,066
+        0.40      41,188,500       1.234       508,066
+        0.50      41,188,500       1.234       508,066
+        0.60      40,921,200       1.238       506,513
+        0.80      37,305,900       1.289       480,867
+        1.00      32,132,700       1.349       433,489
+        1.20      22,374,900       1.455       325,591
+        1.50       7,757,100       1.669       129,444
+
+CLASIFICACIÓN (corte 0)
+Categoría          Toneladas   Ley media     Metal (t)
+Medido            39,544,200       1.239       490,005
+Indicado           1,644,300       1.098        18,061
+Inferido                   0       0.000             0
+
+PIT ÓPTIMO (clausura máxima / Lerchs-Grossmann)
+  Mineral 40,808,000 t a 1.240  ·  estéril 195,668,000 t  ·  razón E/M 4.79  ·  valor US$ 2,621,274,991
+
+VALIDACIÓN EN SONDAJES: 97.9% de los metros coinciden con el modelo
+  Cobertura        92.1%
+  Volcanico        98.4%
+  Sedimentario     97.6%
+  Basamento        98.5%
+  Porfido          98.1%
+  Veta            100.0%
