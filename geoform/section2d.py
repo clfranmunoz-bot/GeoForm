@@ -148,12 +148,15 @@ class SectionView(QtWidgets.QWidget):
         pl.clear()
         pl.set_background("#0b1636", top="#1d2c4f")
         g = scene.flip(m.grid)
+        under = scene.section_underlay(p, normal, origin)
+        if under.n_points:
+            pl.add_mesh(under.translate(-off * 0.3, inplace=False), scalars="rgb", rgb=True, lighting=False)
         for u, face in scene.section_faces(p, normal, origin):
             pl.add_mesh(face, color=scene.unit_color(p, u), lighting=False, name=f"f:{u}")
             g.point_data["s"] = m.partition()[u]
             edge = g.slice(normal=normal, origin=origin).contour([0.0], scalars="s")
             if edge.n_points:
-                pl.add_mesh(edge.translate(off * 0.5, inplace=False), color="#0b1636", line_width=1.2, opacity=0.7)
+                pl.add_mesh(edge.translate(off * 0.5, inplace=False), color="#0b1636", line_width=1.0, opacity=0.45)
         for i, fv in enumerate(m.fault_values):  # campos en la grilla antes de cortar
             g.point_data[f"f{i}"] = fv
         for k, (name, field) in enumerate(m.custom.items()):

@@ -201,6 +201,21 @@ def section(kw, normal, origin):
     return {**kw, "mesh": mesh.clip(normal=normal, origin=origin)} if mesh.n_points else kw
 
 
+def section_underlay(project, normal, origin):
+    """Corte coloreado por celda con la unidad dominante (RGB), bajo las caras suaves: tapa las
+    astillas que la interpolación deja en los puntos triples (donde se juntan tres unidades)."""
+    m = project.model
+    sl = flip(m.grid).slice(normal=normal, origin=origin)
+    if not sl.n_points:
+        return sl
+    sl = sl.clip_scalar(scalars="topo", value=0.0, invert=False)
+    lab = m.label_at(np.asarray(sl.cell_centers().points) * [1, 1, -1])
+    cols = np.array([[int(c[i:i + 2], 16) for i in (1, 3, 5)] for c in
+                     [unit_color(project, u) for u in project.units] + ["#0b1636"]], np.uint8)
+    sl.cell_data["rgb"] = cols[lab]  # lab -1 (aire) -> último color
+    return sl
+
+
 def section_faces(project, normal, origin):
     """Cara de corte coloreada por unidad (tapa del slicer): slice de cada sólido.
     -> [(unidad, malla)] en elevación."""
@@ -258,6 +273,7 @@ def plot_project(project, keys=None, screenshot=None, clip=None, view=None, size
         if mesh.n_points:
             p.add_mesh(mesh, name=key, **kw)
     if clip and project.model is not None:
+        p.add_mesh(section_underlay(project, *clip), scalars="rgb", rgb=True, lighting=False)
         for u, face in section_faces(project, *clip):
             if (f"solid:{u}" in keys) if keys is not None else True:
                 p.add_mesh(face, color=unit_color(project, u), name=f"cut:{u}", ambient=0.25)

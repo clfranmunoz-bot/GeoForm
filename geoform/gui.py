@@ -365,6 +365,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if key in self.visible:
                 self._add(key)
         if self.clip:
+            n = np.asarray(self.clip[0], float)  # base algo detrás de las caras (sin z-fighting)
+            self.plotter.add_mesh(scene.section_underlay(self.project, *self.clip).translate(n * 0.3, inplace=False),
+                                  scalars="rgb", rgb=True, lighting=False, name="cut:base")
             for u, face in scene.section_faces(self.project, *self.clip):
                 if f"solid:{u}" in self.visible:
                     self.plotter.add_mesh(face, color=scene.unit_color(self.project, u), ambient=0.25, name=f"cut:{u}")
