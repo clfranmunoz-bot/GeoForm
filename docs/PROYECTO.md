@@ -87,3 +87,4 @@ Fuente: informe operativo de Leapfrog (FastRBF, interpolantes, flujo, DSL de cá
 ## Bitácora automática
 Cada push a `main` agrega aquí una línea (GitHub Action `.github/workflows/nota.yml`), lo haga quien lo haga. Los pendientes y la bitácora de arriba los actualiza a mano quien cambie el proyecto (ver `AGENTS.md`).
 <!-- commits -->
+- 2026-10-26 · Claudio Francisco Muñoz Rubilar · `58a7a89` Nota del proyecto en docs/PROYECTO.md con bitácora automática por GitHub Action
