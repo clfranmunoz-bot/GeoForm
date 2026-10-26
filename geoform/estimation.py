@@ -264,6 +264,9 @@ def domain_block_model(model, domain, xyz, vals, block=(10.0, 10.0, 10.0), vario
     if method == "kriging":
         kw = vario.kriging_kwargs() if vario is not None else {}
         grade[mask] = ordinary_kriging_3d(xyz, vals, centers[mask], n_neighbors=24, **kw)
+    elif method == "nearest":  # vecino más cercano (polígonos 3D): sin suavizado, referencia de sesgo
+        from scipy.spatial import cKDTree
+        grade[mask] = vals[cKDTree(xyz).query(centers[mask])[1]]
     else:
         grade[mask] = idw(xyz, vals, centers[mask], n_neighbors=12)
     vox.cell_data["grade"] = grade

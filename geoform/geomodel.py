@@ -47,10 +47,27 @@ def hole_samples(collars, surveys, intervals, inside, use, step=10.0):
     return np.asarray(pts, float).reshape(-1, 3), np.asarray(vals, float)
 
 
-def fit_field(pts, vals):
-    """RBF thin-plate suavizado: campo C1 (sin conos en los pozos como el kernel lineal)."""
+DRIFT = {"linear": 1, "quadratic": 2}  # grado del polinomio de tendencia del RBF (TPS exige >= 1)
+
+
+def aniso_matrix(bearing=0.0, plunge=0.0, ratios=(1.0, 1.0, 1.0)):
+    """Elipsoide de anisotropía -> A (3x3) en coords. motor: P @ A.T lleva al espacio isótropo.
+    Eje mayor con rumbo `bearing` (desde el norte) e inmersión `plunge` (hacia abajo); `ratios` =
+    alcances relativos (mayor, intermedio, menor): más alcance = más continuidad en ese eje."""
+    b, p = np.radians(bearing), np.radians(plunge)
+    u = np.array([np.sin(b) * np.cos(p), np.cos(b) * np.cos(p), np.sin(p)])  # z motor = profundidad
+    v = np.array([np.cos(b), -np.sin(b), 0.0])
+    return np.array([u, v, np.cross(u, v)]) / np.asarray(ratios, float)[:, None]
+
+
+def fit_field(pts, vals, degree=1, A=None):
+    """RBF thin-plate suavizado: campo C1 (sin conos en los pozos como el kernel lineal).
+    degree = drift (1 lineal, 2 cuadrático); A = matriz de anisotropía (aniso_matrix)."""
     pts, idx = np.unique(np.round(pts, 3), axis=0, return_index=True)
-    return RBFInterpolator(pts, vals[idx], kernel="thin_plate_spline", smoothing=2.0, degree=1)
+    if A is None:
+        return RBFInterpolator(pts, vals[idx], kernel="thin_plate_spline", smoothing=2.0, degree=degree)
+    f = RBFInterpolator(pts @ A.T, vals[idx], kernel="thin_plate_spline", smoothing=2.0, degree=degree)
+    return lambda P: f(np.asarray(P) @ A.T)
 
 
 def plane_field(fault):
@@ -77,10 +94,13 @@ class GeoModel:
     faults: planos (ver plane_field). dem: (xs, ys, Z) en elevación o None."""
 
     def __init__(self, collars, surveys, intervals, strat, intrusions=(), faults=(), dem=None, cell=10.0,
-                 picks=None, volumes=(), veins=(), mesh_refinement=1):
+                 picks=None, volumes=(), veins=(), mesh_refinement=1,
+                 drift="linear", anisotropy=None):
         """picks: {unidad: [[x, y, elev], ...]} contactos trazados a mano para el techo de la unidad.
         volumes: [{name, top, bottom}] volúmenes entre dos superficies (nombres de self.surfaces).
         mesh_refinement: 1 = sin subdividir (rápido), 2 = Loop, 3 = Butterfly (suaviza contactos voxel).
+        drift: "linear" | "quadratic" (tendencia de los RBF de contactos, intrusivos y vetas).
+        anisotropy: {bearing, plunge, ratios} para intrusivos (3D) y contactos (rumbo y razón en planta).
         """
         self.collars, self.surveys, self.intervals = collars, surveys, intervals
         self.picks, self.custom_volumes = picks or {}, list(volumes)
@@ -89,6 +109,13 @@ class GeoModel:
         self.units = self.strat + self.intrusions + self.veins
         self.dem, self.cell = dem, cell
         self.mesh_refinement = mesh_refinement
+        self.degree = DRIFT[drift]
+        an = {"bearing": 0.0, "plunge": 0.0, "ratios": [1.0, 1.0, 1.0], **(anisotropy or {})}
+        iso = an["ratios"][0] == an["ratios"][1] == an["ratios"][2]
+        self.A = None if iso else aniso_matrix(an["bearing"], an["plunge"], an["ratios"])
+        b = np.radians(an["bearing"])  # contactos 2.5D: solo rumbo y razón mayor/intermedio en planta
+        r = an["ratios"]
+        self.A2 = None if r[0] == r[1] else np.array([[np.sin(b), np.cos(b)], [np.cos(b), -np.sin(b)]]) / np.array(r[:2])[:, None]
 
     # -- campos ---------------------------------------------------------------------
     def _blocks(self):
@@ -118,7 +145,11 @@ class GeoModel:
             m = side(pts) > 0
             sel = m if m.sum() >= 6 else np.ones(len(pts), bool)
             xy, idx = np.unique(np.round(pts[sel, :2], 2), axis=0, return_index=True)
-            g = RBFInterpolator(xy, zc[sel][idx], kernel="thin_plate_spline", smoothing=1.0, degree=1)
+            if self.A2 is None:
+                g = RBFInterpolator(xy, zc[sel][idx], kernel="thin_plate_spline", smoothing=1.0, degree=self.degree)
+            else:
+                g0 = RBFInterpolator(xy @ self.A2.T, zc[sel][idx], kernel="thin_plate_spline", smoothing=1.0, degree=self.degree)
+                g = lambda q, g0=g0: g0(q @ self.A2.T)
             fields.append((lambda P, g=g: T(P) - self._xy_eval(g, P)) if rel else (lambda P, g=g: P[:, 2] - self._xy_eval(g, P)))
         return fields
 
@@ -145,7 +176,7 @@ class GeoModel:
         step = 2 * self.cell
         axes = [np.arange(lo[i], hi[i] + step, step) for i in range(3)]
         G = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
-        coarse = fit_field(pts[keep], vals[keep])(G).reshape([len(a) for a in axes])
+        coarse = fit_field(pts[keep], vals[keep], self.degree, self.A)(G).reshape([len(a) for a in axes])
         out[near] = RegularGridInterpolator(axes, coarse)(P[near])
         return out
 
@@ -173,7 +204,7 @@ class GeoModel:
         uv = np.column_stack([(mid - c) @ e1, (mid - c) @ e2])
         a, b = (hw - c) @ n, (fw - c) @ n
         top, bot = np.maximum(a, b), np.minimum(a, b)  # lado + / lado - del plano medio
-        kw = dict(kernel="thin_plate_spline", smoothing=1.0, degree=1)
+        kw = dict(kernel="thin_plate_spline", smoothing=1.0, degree=self.degree)
         tree = cKDTree(uv)
         spacing = np.median(tree.query(uv, k=2)[0][:, 1])
         from scipy.spatial import Delaunay
@@ -437,6 +468,15 @@ def demo():
                   picks={synth.STRAT[2]: [[1300, 2300, 300.0]]},
                   volumes=[{"name": "Paquete", "top": names[1], "bottom": names[-1]}]).build()
     assert m2.custom_volume("Paquete") > 0 and m2.solid_mesh("Paquete").n_points
+    # anisotropía: el eje mayor (rumbo 45°, inmersión 30°) de largo 3 cae a largo 1 en el espacio isótropo
+    A = aniso_matrix(45, 30, (3, 2, 1))
+    u = np.array([np.sin(np.pi / 4) * np.cos(np.pi / 6), np.cos(np.pi / 4) * np.cos(np.pi / 6), 0.5])
+    assert np.allclose(A @ (3 * u), [1, 0, 0]), A @ (3 * u)
+    # drift cuadrático + anisotropía siguen reproduciendo la litología
+    m3 = GeoModel(collars, surveys, intervals, synth.STRAT, [synth.INTRUSION], [synth.FAULT], dem=dem, cell=12.0,
+                  drift="quadratic", anisotropy={"bearing": 30, "plunge": 0, "ratios": [1.5, 1, 1]}).build()
+    acc3 = float((np.array(m3.units)[m3.label_at(p_m)] == truth[ok]).mean())
+    assert acc3 > 0.8, acc3
     print(f"geomodel: OK  acierto litologico {acc:.1%} en {ok.sum()} puntos; veta {vein_hit:.0%}; "
           + ", ".join(f"{u} {v / 1e6:.1f} Mm3" for u, v in vols.items()))
     return m

@@ -800,7 +800,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _export_mesh(self, key):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Exportar malla", key.replace(":", "_"),
-                                                        "DXF (*.dxf);;OBJ (*.obj);;STL (*.stl);;VTK (*.vtk)")
+                                                        "DXF (*.dxf);;OBJ (*.obj);;STL (*.stl);;PLY (*.ply);;VTK (*.vtk)")
         if path:
             from .export import write_dxf
 
@@ -808,7 +808,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if path.lower().endswith(".dxf"):
                 write_dxf(mesh, path, key)
             else:
-                mesh.extract_surface(algorithm="dataset_surface").save(path)
+                mesh.extract_surface(algorithm="dataset_surface").triangulate().save(path)
             self.log(f"Malla exportada: {path}")
 
     def screenshot(self):
@@ -909,6 +909,25 @@ class ParametersDialog(QtWidgets.QDialog):
         self.mesh_ref = QtWidgets.QSpinBox(minimum=1, maximum=3, value=project.cfg["mesh_refinement"])
         self.mesh_ref.setToolTip("1 = voxelado (rápido), 2 = Loop (recomendado), 3 = Butterfly (máx. suavizado)")
         f.addRow("Refinamiento de malla", self.mesh_ref)
+        f.addRow(QtWidgets.QLabel("INTERPOLANTE · drift y anisotropía de los RBF", objectName="SectionTitle"))
+        self.drift = QtWidgets.QComboBox()
+        self.drift.addItems(["linear", "quadratic"])
+        self.drift.setCurrentText(project.cfg["drift"])
+        self.drift.setToolTip("Tendencia del RBF: lineal (estándar) o cuadrática (contactos curvos lejos de los datos)")
+        f.addRow("Drift", self.drift)
+        an = project.cfg["anisotropy"]
+        self.bearing = QtWidgets.QDoubleSpinBox(minimum=0, maximum=360, decimals=0, value=an["bearing"], suffix="°")
+        f.addRow("Rumbo eje mayor", self.bearing)
+        self.plunge = QtWidgets.QDoubleSpinBox(minimum=0, maximum=90, decimals=0, value=an["plunge"], suffix="°")
+        f.addRow("Inmersión eje mayor", self.plunge)
+        self.ratios = QtWidgets.QLineEdit(", ".join(f"{r:g}" for r in an["ratios"]))
+        self.ratios.setToolTip("Alcances relativos mayor, intermedio, menor (p. ej. 3, 2, 1); 1, 1, 1 = isótropo")
+        f.addRow("Razones de alcance", self.ratios)
+        self.method = QtWidgets.QComboBox()
+        self.method.addItems(["kriging", "idw", "nearest"])
+        self.method.setCurrentText(project.cfg["method"])
+        self.method.setToolTip("Kriging ordinario, inverso de la distancia o vecino más cercano")
+        f.addRow("Método de estimación", self.method)
         self.sims = QtWidgets.QSpinBox(minimum=0, maximum=200, value=project.cfg["simulations"])
         self.sims.setToolTip("Realizaciones de simulación gaussiana secuencial (0 = no simular); "
                              "da P(ley ≥ primera envolvente) por bloque y P10/P50/P90 del tonelaje")
@@ -961,6 +980,11 @@ class ParametersDialog(QtWidgets.QDialog):
         c["block"] = [self.block.value()] * 3
         c["veins"] = [v.strip() for v in self.veins.text().split(",") if v.strip()]
         c["mesh_refinement"] = self.mesh_ref.value()
+        c["method"] = self.method.currentText()
+        c["drift"] = self.drift.currentText()
+        r = [float(x) for x in self.ratios.text().replace(";", ",").split(",") if x.strip()]
+        c["anisotropy"] = {"bearing": self.bearing.value(), "plunge": self.plunge.value(),
+                           "ratios": r if len(r) == 3 and min(r) > 0 else [1.0, 1.0, 1.0]}
         c["simulations"], c["smu"] = self.sims.value(), [self.smu.value()] * 3
         c["pit"] = {k: w.value() for k, w in self.pit.items()}
 

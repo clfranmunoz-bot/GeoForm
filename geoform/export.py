@@ -1,4 +1,4 @@
-"""Exportación: mallas a DXF (3DFACE, sin dependencias) / OBJ, block model a CSV y reporte.
+"""Exportación: mallas a DXF (3DFACE, sin dependencias) / OBJ / STL / PLY, block model a CSV y reporte.
 Formatos adicionales: GOCAD TSurf, VTK, Parquet, CSV mejorado."""
 import csv
 import os
@@ -127,9 +127,9 @@ def write_block_vtk(project, path):
     return path
 
 
-def export_all(project, out_dir, formats=("dxf", "obj", "tsurf", "csv", "parquet", "vtk")):
+def export_all(project, out_dir, formats=("dxf", "obj", "stl", "ply", "tsurf", "csv", "parquet", "vtk")):
     """Exporta todo en múltiples formatos.
-    formats: subconjunto de ('dxf', 'obj', 'tsurf', 'csv', 'parquet', 'vtk')"""
+    formats: subconjunto de ('dxf', 'obj', 'stl', 'ply', 'tsurf', 'csv', 'parquet', 'vtk')"""
     os.makedirs(out_dir, exist_ok=True)
     out = []
     m = project.model
@@ -138,10 +138,11 @@ def export_all(project, out_dir, formats=("dxf", "obj", "tsurf", "csv", "parquet
         mesh = flip(m.solid_mesh(u))
         if "dxf" in formats:
             out.append(write_dxf(mesh, os.path.join(out_dir, f"{u}.dxf"), u))
-        if "obj" in formats:
-            p = os.path.join(out_dir, f"{u}.obj")
-            mesh.save(p)
-            out.append(p)
+        for ext in ("obj", "stl", "ply"):  # pyvista elige el escritor por la extensión
+            if ext in formats:
+                p = os.path.join(out_dir, f"{u}.{ext}")
+                mesh.extract_surface(algorithm="dataset_surface").triangulate().save(p)
+                out.append(p)
         if "tsurf" in formats:
             out.append(write_tsurf(mesh, os.path.join(out_dir, f"{u}.ts"), u))
         if "vtk" in formats:
@@ -160,7 +161,10 @@ def export_all(project, out_dir, formats=("dxf", "obj", "tsurf", "csv", "parquet
         if "csv" in formats:
             out.append(write_block_csv(project, os.path.join(out_dir, "block_model.csv")))
         if "parquet" in formats:
-            out.append(write_block_parquet(project, os.path.join(out_dir, "block_model.parquet")))
+            try:
+                out.append(write_block_parquet(project, os.path.join(out_dir, "block_model.parquet")))
+            except ImportError:  # pyarrow es opcional (pip install geoform[parquet])
+                pass
         if "vtk" in formats:
             out.append(write_block_vtk(project, os.path.join(out_dir, "block_model.vtk")))
     
@@ -181,6 +185,10 @@ def demo():
         p = write_dxf(pv.Cube(), os.path.join(tmp, "c.dxf"))
         txt = open(p).read()
         assert txt.count("3DFACE") == 12 and txt.endswith("EOF\n"), txt.count("3DFACE")
+        for ext in ("stl", "ply"):
+            q = os.path.join(tmp, f"c.{ext}")
+            pv.Cube().triangulate().save(q)
+            assert pv.read(q).n_cells == 12, ext
     print("export: OK  DXF 3DFACE (cubo = 12 triángulos)")
 
 

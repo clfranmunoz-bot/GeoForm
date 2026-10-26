@@ -31,6 +31,9 @@ DEFAULTS = {
     "topcut": None,                # ley máxima de compósitos (capping); None = sin recorte
     "shells": [0.5, 1.0],          # leyes de corte de las envolventes de ley (modelo numérico)
     "pit": {},                     # parámetros económicos del pit (ver pit.DEFAULTS)
+    "drift": "linear",             # tendencia de los RBF del modelo geológico: linear | quadratic
+    "anisotropy": {"bearing": 0.0, "plunge": 0.0, "ratios": [1.0, 1.0, 1.0]},  # elipsoide de los RBF
+    "method": "kriging",           # estimación de bloques: kriging | idw | nearest
     "simulations": 0,              # realizaciones SGS (0 = no simular); ~3 s c/u en el demo
     "smu": [1, 1, 1],              # re-bloqueo a SMU en bloques (fx, fy, fz) para la curva ley-tonelaje
     "mesh_refinement": 1,          # 1=sin subdividir (rápido), 2=Loop, 3=Butterfly (suaviza contactos voxel)
@@ -91,13 +94,14 @@ class Project:
         self.model = GeoModel(self.collars, self.surveys, self.intervals, self.strat,
                               self.cfg["intrusions"], self.cfg["faults"], self.dem, self.cfg["cell"],
                               self.cfg["picks"], self.cfg["volumes"], self.units[len(self.strat) + len(self.cfg["intrusions"]):],
-                              mesh_refinement=self.cfg["mesh_refinement"]).build()
+                              mesh_refinement=self.cfg["mesh_refinement"], drift=self.cfg["drift"],
+                              anisotropy=self.cfg["anisotropy"]).build()
         self.blocks = self.vario = self.comp = self.all_comp = self.pit = self.xval = self.sims = None
         if estimate and self.assays:
             self.estimate()
         return self
 
-    def estimate(self, method="kriging"):
+    def estimate(self):
         from .estimation import Variogram, domain_block_model, domain_composites
 
         dom = self.cfg["domain"]
@@ -120,7 +124,7 @@ class Project:
             from .estimation import cross_validate
             from .pit import optimize
 
-            self.blocks = domain_block_model(self.model, dom, xyz, vals, tuple(self.cfg["block"]), self.vario, method)
+            self.blocks = domain_block_model(self.model, dom, xyz, vals, tuple(self.cfg["block"]), self.vario, self.cfg["method"])
             self.xval = cross_validate(xyz, vals, self.vario)
             self.log("Validación cruzada: " + ", ".join(f"{k} {v:.3f}" for k, v in self.xval[2].items()))
             if self.cfg["simulations"]:
