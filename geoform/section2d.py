@@ -88,12 +88,16 @@ class SectionView(QtWidgets.QWidget):
         undo = QtWidgets.QPushButton("Deshacer")
         clear = QtWidgets.QPushButton("Borrar trazos")
         vol = QtWidgets.QPushButton("Volumen entre superficies…", objectName="Primary")
-        for w in (self.axis, QtWidgets.QLabel("Posición"), self.pos, self.pos_label, QtWidgets.QLabel("Ancho"),
-                  self.tol, self.pick, self.unit, undo, clear):
+        for w in (self.axis, QtWidgets.QLabel("Posición"), self.pos, self.pos_label, QtWidgets.QLabel("Ancho"), self.tol):
             bar.addWidget(w)
         bar.addStretch(1)
-        bar.addWidget(vol)
         v.addLayout(bar)
+        bar2 = QtWidgets.QHBoxLayout()  # dos filas: en una sola la ventana no cabía en pantallas de 1440 px
+        for w in (self.pick, self.unit, undo, clear):
+            bar2.addWidget(w)
+        bar2.addStretch(1)
+        bar2.addWidget(vol)
+        v.addLayout(bar2)
         from pyvistaqt import QtInteractor
 
         self.ve = QtWidgets.QDoubleSpinBox(minimum=1, maximum=5, singleStep=0.5, value=1, decimals=1, prefix="V ×")
@@ -102,7 +106,7 @@ class SectionView(QtWidgets.QWidget):
         self.view = QtInteractor(self)  # perfil renderizado con VTK (como el corte de Leapfrog)
         v.addWidget(self.view, 1)
         self.view.track_click_position(self._click, side="left")
-        self.hint = QtWidgets.QLabel("", objectName="Muted")
+        self.hint = QtWidgets.QLabel("", objectName="Muted", wordWrap=True)
         v.addWidget(self.hint)
 
         self.axis.currentIndexChanged.connect(self.draw)
@@ -148,13 +152,9 @@ class SectionView(QtWidgets.QWidget):
         pl.clear()
         pl.set_background("#0b1636", top="#1d2c4f")
         g = scene.flip(m.grid)
-        under = scene.section_underlay(p, normal, origin)
-        if under.n_points:
-            pl.add_mesh(under.translate(-off * 0.3, inplace=False), scalars="rgb", rgb=True, lighting=False)
         for u, face in scene.section_faces(p, normal, origin):
             pl.add_mesh(face, color=scene.unit_color(p, u), lighting=False, name=f"f:{u}")
-            g.point_data["s"] = m.partition()[u]
-            edge = g.slice(normal=normal, origin=origin).contour([0.0], scalars="s")
+            edge = face.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
             if edge.n_points:
                 pl.add_mesh(edge.translate(off * 0.5, inplace=False), color="#0b1636", line_width=1.0, opacity=0.45)
         for i, fv in enumerate(m.fault_values):  # campos en la grilla antes de cortar
