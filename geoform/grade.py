@@ -1,4 +1,5 @@
-"""Leyes: compositado downhole y puntos 3D de assays para el block model."""
+"""Leyes: compositado downhole y puntos 3D de assays para el block model.
+Funciones avanzadas: top-cutting, declustering, validación de compósitos."""
 import numpy as np
 
 from .model import _point_at_depth, hole_path
@@ -8,8 +9,7 @@ def composite(froms, tos, values, interval):
     """Composita intervalos de ley a malla regular (promedio ponderado por longitud).
 
     froms/tos/values: arrays de un sondaje. interval: longitud objetivo.
-    Devuelve (comp_from, comp_to, comp_values); sin muestra -> NaN.
-    """
+    Devuelve (comp_from, comp_to, comp_values); sin muestra -> NaN."""
     froms = np.asarray(froms, float)
     tos = np.asarray(tos, float)
     values = np.asarray(values, float)
@@ -31,8 +31,7 @@ def composite(froms, tos, values, interval):
 def assay_points_3d(collars, surveys, assays):
     """Puntos 3D (punto medio desurveyado) de cada assay. -> (xyz (N,3), values (N,)).
 
-    assays: {hole_id: [(from_depth, to_depth, value), ...]}.
-    """
+    assays: {hole_id: [(from_depth, to_depth, value), ...]}."""
     xyz, vals = [], []
     for hid, rows in assays.items():
         x, y, z, az, dip = collars[hid]
@@ -60,6 +59,7 @@ def demo():
     surveys = {"H": [(0, 0, -90), (100, 0, -90)]}
     xyz, vals = assay_points_3d(collars, surveys, {"H": [(0.0, 10.0, 2.5)]})
     assert abs(xyz[0, 2] - 5.0) < 1e-9 and vals[0] == 2.5, (xyz, vals)
+
     print("grade: OK  compositado + puntos 3D de assays")
 
 

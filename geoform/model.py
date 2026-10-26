@@ -89,7 +89,8 @@ def make_surface_field(contacts, tangents, polarity_offset=5.0, refine=2, neighb
     """RBF de la superficie. Refina los off-points hacia la normal del campo:
     el sondaje no es perpendicular a la superficie en general, y el valor de
     los off-points debe ser la distancia a lo largo de la normal para que el
-    campo sea consistente (firma de distancia). neighbors = k activa RBF local."""
+    campo sea consistente (firma de distancia). neighbors = k activa RBF local.
+    """
     contacts = np.asarray(contacts, float)
     direction = np.asarray(tangents, float)
     rbf = make_rbf(contacts, _off_points(contacts, direction, polarity_offset), neighbors)

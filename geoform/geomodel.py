@@ -11,11 +11,13 @@ Cada unidad es un sólido = intersección (min) de campos; su isosuperficie 0 es
 volumen cerrado (marching cubes).
 
 Coordenadas del motor: z = profundidad = -elevación.
+
 """
 import itertools
 
 import numpy as np
 from scipy.interpolate import RBFInterpolator, RegularGridInterpolator
+
 
 from .model import _point_at_depth, hole_path
 
@@ -75,15 +77,18 @@ class GeoModel:
     faults: planos (ver plane_field). dem: (xs, ys, Z) en elevación o None."""
 
     def __init__(self, collars, surveys, intervals, strat, intrusions=(), faults=(), dem=None, cell=10.0,
-                 picks=None, volumes=(), veins=()):
+                 picks=None, volumes=(), veins=(), mesh_refinement=1):
         """picks: {unidad: [[x, y, elev], ...]} contactos trazados a mano para el techo de la unidad.
-        volumes: [{name, top, bottom}] volúmenes entre dos superficies (nombres de self.surfaces)."""
+        volumes: [{name, top, bottom}] volúmenes entre dos superficies (nombres de self.surfaces).
+        mesh_refinement: 1 = sin subdividir (rápido), 2 = Loop, 3 = Butterfly (suaviza contactos voxel).
+        """
         self.collars, self.surveys, self.intervals = collars, surveys, intervals
         self.picks, self.custom_volumes = picks or {}, list(volumes)
         self.veins = [v for v in veins if v not in strat and v not in intrusions]
         self.strat, self.intrusions, self.faults = list(strat), list(intrusions), list(faults)
         self.units = self.strat + self.intrusions + self.veins
         self.dem, self.cell = dem, cell
+        self.mesh_refinement = mesh_refinement
 
     # -- campos ---------------------------------------------------------------------
     def _blocks(self):
@@ -357,7 +362,14 @@ class GeoModel:
         s[:, :, [0, -1]] = -1e-3
         g.point_data["s"] = s.ravel(order="F")
         m = g.contour([0.0], scalars="s")
-        return m.smooth_taubin(n_iter=20, feature_smoothing=False, boundary_smoothing=False, feature_angle=50) if m.n_points else m
+        if not m.n_points:
+            return m
+        # Refinamiento de malla (subdivisión) para contactos más suaves tipo Leapfrog
+        # mesh_refinement: 1 = sin subdividir (rápido), 2 = Loop, 3 = Butterfly
+        refinement = getattr(self, "mesh_refinement", 1)
+        if refinement >= 2:
+            m = m.subdivide(refinement - 1, subfilter="loop" if refinement == 2 else "butterfly")
+        return m.smooth_taubin(n_iter=20, feature_smoothing=False, boundary_smoothing=False, feature_angle=50)
 
     def fault_mesh(self, i):
         """Superficie de falla recortada al subsuelo y al dominio."""

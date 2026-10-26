@@ -91,7 +91,11 @@ class BuildThread(QtCore.QThread):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, project=None):
         super().__init__()
-        self.resize(1680, 1000)
+        # Tamaño responsive: 90 % de la pantalla disponible, con mínimos
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        w = min(1680, int(screen.width() * 0.9))
+        h = min(1000, int(screen.height() * 0.9))
+        self.resize(max(w, 1024), max(h, 700))
         self.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(theme.CHECK), "geoform.ico")))
         self.project = project
         self.layer_defs, self.base_kw, self.actors = {}, {}, {}
@@ -656,6 +660,10 @@ class MainWindow(QtWidgets.QMainWindow):
             kpis.addWidget(card(f"Recurso > {row[0]:g}{un} {el}", f"{row[1] / 1e6:,.1f} Mt", f"dominio {p.cfg['domain']}", theme.ACCENT))
             kpis.addWidget(card("Ley media", f"{row[2]:.2f} {un}", f"{el} sobre la ley de corte", theme.AMBER))
             kpis.addWidget(card(f"{el} contenido", f"{row[3] / 1e3:,.0f} kt", "metal fino estimado"))
+        if p.sims is not None:
+            lo, mid, hi = p.sim_percentiles()
+            kpis.addWidget(card(f"SGS · t ≥ {p.sims[0]:g}{p.cfg['unit']}", f"{mid / 1e6:,.1f} Mt",
+                                f"P10 {lo / 1e6:,.1f} – P90 {hi / 1e6:,.1f} Mt · {len(p.sims[1])} realiz.", theme.SERIES[3]))
         if p.pit is not None:
             s = p.pit[1]
             kpis.addWidget(card("Pit óptimo", f"{s['t_mineral'] / 1e6:,.1f} Mt",
@@ -895,12 +903,22 @@ class ParametersDialog(QtWidgets.QDialog):
         f.addRow("Dominio de estimación", self.domain)
         self.element = QtWidgets.QLineEdit(project.cfg["element"])
         f.addRow("Elemento", self.element)
-        self.cell = QtWidgets.QDoubleSpinBox(minimum=2, maximum=100, value=project.cfg["cell"])
+        self.cell = QtWidgets.QDoubleSpinBox(minimum=2.5, maximum=15.0, singleStep=0.5, decimals=1, value=project.cfg["cell"])
         f.addRow("Resolución del modelo (m)", self.cell)
         self.comp = QtWidgets.QDoubleSpinBox(minimum=1, maximum=50, value=project.cfg["composite"])
         f.addRow("Largo de compósito (m)", self.comp)
         self.block = QtWidgets.QDoubleSpinBox(minimum=2, maximum=100, value=project.cfg["block"][0])
         f.addRow("Tamaño de bloque (m)", self.block)
+        self.mesh_ref = QtWidgets.QSpinBox(minimum=1, maximum=3, value=project.cfg["mesh_refinement"])
+        self.mesh_ref.setToolTip("1 = voxelado (rápido), 2 = Loop (recomendado), 3 = Butterfly (máx. suavizado)")
+        f.addRow("Refinamiento de malla", self.mesh_ref)
+        self.sims = QtWidgets.QSpinBox(minimum=0, maximum=200, value=project.cfg["simulations"])
+        self.sims.setToolTip("Realizaciones de simulación gaussiana secuencial (0 = no simular); "
+                             "da P(ley ≥ primera envolvente) por bloque y P10/P50/P90 del tonelaje")
+        f.addRow("Simulaciones SGS", self.sims)
+        self.smu = QtWidgets.QSpinBox(minimum=1, maximum=10, value=project.cfg["smu"][0])
+        self.smu.setToolTip("Re-bloqueo a SMU: n×n×n bloques promediados (con dilución) para la curva ley-tonelaje")
+        f.addRow("SMU (bloques por lado)", self.smu)
         self.veins = QtWidgets.QLineEdit(", ".join(project.cfg["veins"]))
         self.veins.setPlaceholderText("litologías separadas por coma, p. ej. Veta")
         f.addRow("Vetas", self.veins)
@@ -945,6 +963,8 @@ class ParametersDialog(QtWidgets.QDialog):
         c["cell"], c["composite"] = self.cell.value(), self.comp.value()
         c["block"] = [self.block.value()] * 3
         c["veins"] = [v.strip() for v in self.veins.text().split(",") if v.strip()]
+        c["mesh_refinement"] = self.mesh_ref.value()
+        c["simulations"], c["smu"] = self.sims.value(), [self.smu.value()] * 3
         c["pit"] = {k: w.value() for k, w in self.pit.items()}
 
 

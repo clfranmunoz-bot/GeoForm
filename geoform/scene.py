@@ -191,6 +191,13 @@ def layers(project):
                         clim=(0.5, 3.5), show_edges=True, edge_color="#0d1117", line_width=0.4,
                         scalar_bar_args={**sbar("1 Medido · 2 Indicado · 3 Inferido"), "n_labels": 3, "fmt": "%.0f"})
         out.append(("blocks:class", "Modelos de bloques", "Clasificación de recursos", classes))
+        if "prob" in project.blocks.cell_data:
+            def prob():
+                b = project.blocks.threshold(0.5, scalars="domain")
+                return dict(mesh=flip(b), scalars="prob", cmap="magma", clim=(0, 1), show_edges=True,
+                            edge_color="#0d1117", line_width=0.4,
+                            scalar_bar_args=sbar(f"P({project.cfg['element']} ≥ {project.sims[0]:g})"))
+            out.append(("blocks:prob", "Modelos de bloques", f"Probabilidad SGS ≥ {project.sims[0]:g}", prob))
         out.append(("blocks", "Modelos de bloques", f"Kriging {project.cfg['element']} en {project.cfg['domain']}", blocks))
     return out
 

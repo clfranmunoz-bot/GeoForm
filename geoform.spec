@@ -1,31 +1,56 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Build: .venv\Scripts\python -m PyInstaller geoform.spec --noconfirm
-# El Python base es conda (spyder-6): PyInstaller no copia los DLL de Library/bin, se agregan a mano.
-import os
-
-from PyInstaller.utils.hooks import collect_all, collect_data_files
-
-datas = [('geoform/data', 'geoform/data'), ('geoform/assets', 'geoform/assets')]
-CONDA_BIN = 'C:/ProgramData/spyder-6/Library/bin'
-DLLS = ['ffi-8.dll', 'sqlite3.dll', 'libssl-3-x64.dll', 'libcrypto-3-x64.dll', 'libexpat.dll',
-        'libbz2.dll', 'liblzma.dll', 'zlib.dll', 'zlib1.dll']
-binaries = [(f'{CONDA_BIN}/{d}', '.') for d in DLLS if os.path.exists(f'{CONDA_BIN}/{d}')]
-hiddenimports = []
-datas += collect_data_files('pyvista')
-tmp_ret = collect_all('vtkmodules')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['geoform_launcher.py'],
+    ['entry_point.py'],
     pathex=[],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[],
+    datas=[('geoform/data', 'geoform/data'), ('geoform/assets', 'geoform/assets'), ('geoform/vtk_constants_hook.py', 'geoform')],
+    hiddenimports=[
+        'pyvista',
+        'pyvista.core.utilities.arrays',
+        'pyvista.core.utilities.helpers',
+        'pyvista.core.grid',
+        'pyvista.plotting.plotter',
+        'pyvistaqt',
+        'PySide6',
+        'vtk',
+        'vtkmodules.util.numpy_support',
+        'vtkmodules.util.vtkConstants',
+        'vtkmodules.vtkCommonCore',
+        'vtkmodules.vtkCommonDataModel',
+        'vtkmodules.vtkFiltersCore',
+        'vtkmodules.vtkRenderingCore',
+        'vtkmodules.vtkInteractionStyle',
+        'vtkmodules.vtkRenderingOpenGL2',
+        'vtkmodules.vtkCommonExecutionModel',
+        'vtkmodules.vtkFiltersGeneral',
+        'vtkmodules.vtkImagingCore',
+        'vtkmodules.vtkCommonMath',
+        'vtkmodules.vtkCommonMisc',
+        'vtkmodules.vtkCommonComputationalGeometry',
+        'scipy',
+        'numpy',
+        'matplotlib',
+        'geoform.grade',
+        'geoform.estimation',
+        'geoform.kriging',
+        'geoform.implicit',
+        'geoform.model',
+        'geoform.project',
+        'geoform.correlation',
+        'geoform.block_model',
+        'geoform.synth',
+        'geoform.topography',
+        'geoform.scene',
+        'geoform.gui',
+        'pyarrow',
+        'pillow',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter'],
+    excludes=[],
     noarchive=False,
     optimize=0,
 )
@@ -36,13 +61,12 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='geoform',
+    name='GeoForm',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # app de ventana: sin consola negra detrás
-    icon='geoform/assets/geoform.ico',
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -56,5 +80,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='geoform',
+    name='GeoForm',
+)
+app = BUNDLE(
+    coll,
+    name='GeoForm.app',
+    icon='geoform/assets/geoform.icns',
+    bundle_identifier='com.nousresearch.geoform',
 )

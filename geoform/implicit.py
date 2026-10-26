@@ -3,7 +3,7 @@
 Puntos de contacto (valor 0) + puntos de polaridad (±) alimentan un RBF;
 la isosuperficie en 0 es la malla geológica.
 
-# shortcut: RBF global O(N^2); para >100k puntos, particionar o pasar a FastRBF.
+# shortcut: RBF global O(N^2); para >100k puntos, usar neighbors (RBF local).
 """
 import numpy as np
 from scipy.interpolate import RBFInterpolator

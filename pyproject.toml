@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller"]
+parquet = ["pyarrow"]
 
 [project.scripts]
 geoform = "geoform.__main__:main"
